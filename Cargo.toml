@@ -1,0 +1,7 @@
+[package]
+name = "madness"
+version = "0.1.0"
+authors = ["Jonathan Turner <jonathan.d.turner@gmail.com>"]
+
+[dependencies]
+syn = {git = "https://github.com/dtolnay/syn", features = ["full", "extra-traits"] }
