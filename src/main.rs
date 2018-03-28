@@ -2,11 +2,10 @@
 extern crate syn;
 use syn::{Block, Expr, FnDecl, Item, Lit, Stmt};
 
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::process;
-use std::collections::HashMap;
 
 #[derive(Debug)]
 struct Fun {
@@ -24,7 +23,7 @@ fn eval_expr(expr: &Expr) {
         },
         Expr::Lit(el) => match el.lit {
             Lit::Int(ref li) => {
-                println!("Got: {:?}", li);
+                println!("Got: {:?}", li.value());
             }
             _ => unimplemented!("unknown literal"),
         },
@@ -47,44 +46,89 @@ fn eval_fun(fun: &Fun) {
     }
 }
 
+fn codegen_expr(expr: &Expr) -> String {
+    let mut output = String::new();
+
+    match expr {
+        Expr::Lit(el) => match el.lit {
+            Lit::Int(ref li) => {
+                output += &li.value().to_string();
+            }
+            _ => unimplemented!("unknown expr type"),
+        },
+        _ => unimplemented!("unknown expr type"),
+    }
+
+    output
+}
+
+fn codegen_stmt(stmt: &Stmt) -> String {
+    let mut output = String::new();
+    match stmt {
+        Stmt::Semi(ref er, _) => match er {
+            Expr::Return(ref r) => match r.expr {
+                Some(ref inner) => {
+                    output += "return ";
+                    output += &codegen_expr(inner);
+                    output += ";\n";
+                }
+                _ => unimplemented!("expected return value"),
+            },
+            _ => unimplemented!("unknown semi type"),
+        },
+        _ => unimplemented!("unknown stmt type"),
+    }
+
+    output
+}
+
+fn codegen_fun(fun: &Fun) -> String {
+    let mut output = String::new();
+
+    output += "void foo() {\n";
+
+    for stmt in &fun.block.stmts {
+        output += &codegen_stmt(stmt);
+    }
+
+    output += "}";
+
+    output
+}
+
 fn main() {
     let mut fn_hash = HashMap::new();
 
     let mut args = env::args();
     let _ = args.next(); // executable name
 
-    let filename = match (args.next(), args.next()) {
-        (Some(filename), None) => filename,
-        _ => {
-            eprintln!("Usage: dump-syntax path/to/filename.rs");
-            process::exit(1);
-        }
-    };
+    for arg in args {
+        let mut file = File::open(arg).expect("Unable to open file");
 
-    let mut file = File::open(&filename).expect("Unable to open file");
+        let mut src = String::new();
+        file.read_to_string(&mut src).expect("Unable to read file");
 
-    let mut src = String::new();
-    file.read_to_string(&mut src).expect("Unable to read file");
+        let syntax = syn::parse_file(&src).expect("Unable to parse file");
 
-    let syntax = syn::parse_file(&src).expect("Unable to parse file");
+        for item in syntax.items {
+            match item {
+                Item::Fn(item_fn) => {
+                    let fun = Fun {
+                        decl: item_fn.decl,
+                        block: item_fn.block,
+                    };
 
-    for item in syntax.items {
-        match item {
-            Item::Fn(item_fn) => {
-                let fun = Fun {
-                    decl: item_fn.decl,
-                    block: item_fn.block,
-                };
+                    let fn_name = format!("{}", item_fn.ident);
 
-                let fn_name = format!("{}", item_fn.ident);
-
-                fn_hash.insert(fn_name, fun);
-            }
-            _ => {
-                unimplemented!("Unknown item type");
+                    fn_hash.insert(fn_name, fun);
+                }
+                _ => {
+                    unimplemented!("Unknown item type");
+                }
             }
         }
+        println!("{:#?}", fn_hash);
+        eval_fun(&fn_hash["main"]);
+        println!("codegen: {}", codegen_fun(&fn_hash["main"]));
     }
-    println!("{:#?}", fn_hash);
-    eval_fun(&fn_hash["main"]);
 }
