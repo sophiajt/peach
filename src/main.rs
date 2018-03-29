@@ -1,6 +1,6 @@
 #![feature(match_default_bindings)]
 extern crate syn;
-use syn::{Block, Expr, FnDecl, Item, Lit, Stmt};
+use syn::{BinOp, Block, Expr, FnDecl, Item, Lit, Stmt};
 
 use std::collections::HashMap;
 use std::env;
@@ -13,19 +13,38 @@ struct Fun {
     block: Box<Block>,
 }
 
-fn eval_expr(expr: &Expr) {
+fn eval_expr(expr: &Expr) -> u64 {
     match expr {
         Expr::Return(er) => match er.expr {
-            Some(ref inner) => {
-                eval_expr(&inner);
-            }
+            Some(ref inner) => eval_expr(&inner),
             _ => unimplemented!("expected return value"),
         },
         Expr::Lit(el) => match el.lit {
-            Lit::Int(ref li) => {
-                println!("Got: {:?}", li.value());
-            }
+            Lit::Int(ref li) => li.value(),
             _ => unimplemented!("unknown literal"),
+        },
+        Expr::Binary(eb) => match eb.op {
+            BinOp::Add(_a) => {
+                let lhs = eval_expr(&*eb.left);
+                let rhs = eval_expr(&*eb.right);
+                lhs + rhs
+            }
+            BinOp::Sub(_s) => {
+                let lhs = eval_expr(&*eb.left);
+                let rhs = eval_expr(&*eb.right);
+                lhs - rhs
+            }
+            BinOp::Mul(_m) => {
+                let lhs = eval_expr(&*eb.left);
+                let rhs = eval_expr(&*eb.right);
+                lhs * rhs
+            }
+            BinOp::Div(_d) => {
+                let lhs = eval_expr(&*eb.left);
+                let rhs = eval_expr(&*eb.right);
+                lhs / rhs
+            }
+            _ => unimplemented!("unknown operator"),
         },
         _ => unimplemented!("unknown expr type"),
     }
@@ -34,7 +53,7 @@ fn eval_expr(expr: &Expr) {
 fn eval_stmt(stmt: &Stmt) {
     match stmt {
         Stmt::Semi(ref e, _) => {
-            eval_expr(e);
+            println!("Got value: {}", eval_expr(e));
         }
         _ => unimplemented!("unknown stmt type"),
     }
@@ -56,6 +75,45 @@ fn codegen_expr(expr: &Expr) -> String {
             }
             _ => unimplemented!("unknown expr type"),
         },
+        Expr::Binary(eb) => match eb.op {
+            BinOp::Add(_a) => {
+                let lhs = codegen_expr(&*eb.left);
+                let rhs = codegen_expr(&*eb.right);
+                output += "(";
+                output += &lhs;
+                output += ")+(";
+                output += &rhs;
+                output += ")";
+            }
+            BinOp::Sub(_s) => {
+                let lhs = codegen_expr(&*eb.left);
+                let rhs = codegen_expr(&*eb.right);
+                output += "(";
+                output += &lhs;
+                output += ")-(";
+                output += &rhs;
+                output += ")";
+            }
+            BinOp::Mul(_m) => {
+                let lhs = codegen_expr(&*eb.left);
+                let rhs = codegen_expr(&*eb.right);
+                output += "(";
+                output += &lhs;
+                output += ")*(";
+                output += &rhs;
+                output += ")";
+            }
+            BinOp::Div(_d) => {
+                let lhs = codegen_expr(&*eb.left);
+                let rhs = codegen_expr(&*eb.right);
+                output += "(";
+                output += &lhs;
+                output += ")/(";
+                output += &rhs;
+                output += ")";
+            }
+            _ => unimplemented!("unknown operator"),
+        },
         _ => unimplemented!("unknown expr type"),
     }
 
@@ -74,7 +132,10 @@ fn codegen_stmt(stmt: &Stmt) -> String {
                 }
                 _ => unimplemented!("expected return value"),
             },
-            _ => unimplemented!("unknown semi type"),
+            _ => {
+                output += &codegen_expr(er);
+                output += ";\n";
+            }
         },
         _ => unimplemented!("unknown stmt type"),
     }
