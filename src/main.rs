@@ -118,7 +118,7 @@ fn convert_stmt_to_bytecode(stmt: &Stmt, expected_return_type: &Ty, bytecode: &m
     }
 }
 
-fn convert_fn_to_bytecode(fun: ItemFn) -> Vec<Bytecode> {
+fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>) {
     let mut output = Vec::new();
 
     let return_type = match &fun.decl.output {
@@ -130,7 +130,7 @@ fn convert_fn_to_bytecode(fun: ItemFn) -> Vec<Bytecode> {
         convert_stmt_to_bytecode(stmt, &return_type, &mut output);
     }
 
-    output
+    (return_type, output)
 }
 
 /*
@@ -286,7 +286,6 @@ fn codegen_fun(fun: &Fun) -> String {
 */
 
 fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
-    let mut output = EvalValue::Error;
     let mut value_stack: Vec<EvalValue> = vec![];
     for bc in bytecode {
         match bc {
@@ -312,6 +311,55 @@ fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
     EvalValue::Error
 }
 
+fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -> String {
+    let mut output = String::new();
+
+    match return_type {
+        Ty::U64 => {
+            output += "unsigned long long ";
+        }
+        Ty::Void => {
+            output += "void ";
+        }
+        _ => unimplemented!("Can't codegen function with return type: {:?}", return_type),
+    }
+
+    output += fn_name;
+    output += "() {\n";
+
+    let mut next_id = 0;
+    let mut var_name_stack = vec![];
+    for bc in bytecode {
+        match bc {
+            Bytecode::ReturnVoid => {
+                output += "return;\n";
+                break;
+            }
+            Bytecode::ReturnLastStackValue => {
+                let retval = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                output += &format!("return v{};\n", retval);
+                break;
+            }
+            Bytecode::PushU64(val) => {
+                output += &format!("unsigned long long v{} = {};\n", next_id, val);
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
+            Bytecode::Add => {
+                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                output += &format!("unsigned long long v{} = v{}+v{};\n", next_id, lhs, rhs);
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
+        }
+    }
+
+    output += "}";
+
+    output
+}
+
 fn main() {
     //let mut fn_hash = HashMap::new();
 
@@ -329,9 +377,14 @@ fn main() {
         for item in syntax.items {
             match item {
                 Item::Fn(item_fn) => {
-                    let bytecode = convert_fn_to_bytecode(item_fn);
+                    let fn_name = item_fn.ident.to_string();
+                    let (return_type, bytecode) = convert_fn_to_bytecode(item_fn);
                     println!("{:?}", bytecode);
                     println!("eval: {:?}", eval_bytecode(&bytecode));
+                    println!(
+                        "codegen: {}",
+                        codegen_bytecode(&fn_name, &return_type, &bytecode)
+                    );
                 }
                 _ => {
                     unimplemented!("Unknown item type");
