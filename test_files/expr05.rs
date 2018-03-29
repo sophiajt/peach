@@ -1,3 +1,3 @@
-fn main() {
+fn expr() {
     let (x, _) = 3;
 }

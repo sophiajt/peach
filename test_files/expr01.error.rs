@@ -1,3 +1,3 @@
-fn main() {
+fn expr() {
     return 4;
 }
