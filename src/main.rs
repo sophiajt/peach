@@ -15,12 +15,17 @@ enum Bytecode {
     ReturnLastStackValue,
     ReturnVoid,
     PushU64(u64),
+    PushBool(bool),
     Add,
+    Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, PartialEq)]
 enum Ty {
     U64,
+    Bool,
     Error,
     Void,
 }
@@ -28,6 +33,7 @@ enum Ty {
 #[derive(Debug)]
 enum EvalValue {
     U64(u64),
+    Bool(bool),
     Error,
     Void,
 }
@@ -36,6 +42,7 @@ fn resolve_type(tp: &Box<Type>) -> Ty {
     match **tp {
         Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
             "u64" => Ty::U64,
+            "bool" => Ty::Bool,
             _ => Ty::Error,
         },
         _ => Ty::Error,
@@ -73,7 +80,11 @@ fn convert_expr_to_bytecode(
                 bytecode.push(Bytecode::PushU64(li.value()));
                 Ty::U64
             }
-            _ => unimplemented!("unknown literal"),
+            Lit::Bool(ref lb) => {
+                bytecode.push(Bytecode::PushBool(lb.value));
+                Ty::Bool
+            }
+            _ => unimplemented!("unknown literal: {:?}", el),
         },
         Expr::Binary(eb) => match eb.op {
             BinOp::Add(_a) => {
@@ -86,7 +97,37 @@ fn convert_expr_to_bytecode(
                     unimplemented!("Can't add values of {:?} and {:?}", lhs_type, rhs_type);
                 }
             }
-            _ => unimplemented!("Unknown operator"),
+            BinOp::Sub(_a) => {
+                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
+                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    bytecode.push(Bytecode::Sub);
+                    Ty::U64
+                } else {
+                    unimplemented!("Can't subtract values of {:?} and {:?}", lhs_type, rhs_type);
+                }
+            }
+            BinOp::Mul(_a) => {
+                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
+                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    bytecode.push(Bytecode::Mul);
+                    Ty::U64
+                } else {
+                    unimplemented!("Can't subtract values of {:?} and {:?}", lhs_type, rhs_type);
+                }
+            }
+            BinOp::Div(_a) => {
+                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
+                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    bytecode.push(Bytecode::Div);
+                    Ty::U64
+                } else {
+                    unimplemented!("Can't subtract values of {:?} and {:?}", lhs_type, rhs_type);
+                }
+            }
+            _ => unimplemented!("Unknown operator: {:?}", eb.op),
         },
         _ => unimplemented!("Unknown expr type"),
     }
@@ -145,18 +186,39 @@ fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
                 _ => return EvalValue::Error,
             },
             Bytecode::Add => match (value_stack.pop(), value_stack.pop()) {
-                (Some(EvalValue::U64(lhs)), Some(EvalValue::U64(rhs))) => {
+                (Some(EvalValue::U64(rhs)), Some(EvalValue::U64(lhs))) => {
                     value_stack.push(EvalValue::U64(lhs + rhs));
+                }
+                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+            },
+            Bytecode::Sub => match (value_stack.pop(), value_stack.pop()) {
+                (Some(EvalValue::U64(rhs)), Some(EvalValue::U64(lhs))) => {
+                    value_stack.push(EvalValue::U64(lhs - rhs));
+                }
+                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+            },
+            Bytecode::Mul => match (value_stack.pop(), value_stack.pop()) {
+                (Some(EvalValue::U64(rhs)), Some(EvalValue::U64(lhs))) => {
+                    value_stack.push(EvalValue::U64(lhs * rhs));
+                }
+                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+            },
+            Bytecode::Div => match (value_stack.pop(), value_stack.pop()) {
+                (Some(EvalValue::U64(rhs)), Some(EvalValue::U64(lhs))) => {
+                    value_stack.push(EvalValue::U64(lhs / rhs));
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::PushU64(val) => {
                 value_stack.push(EvalValue::U64(*val));
             }
+            Bytecode::PushBool(val) => {
+                value_stack.push(EvalValue::Bool(*val));
+            }
         }
     }
 
-    EvalValue::Error
+    EvalValue::Void
 }
 
 fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -> String {
@@ -168,6 +230,9 @@ fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -
         }
         Ty::Void => {
             output += "void ";
+        }
+        Ty::Bool => {
+            output += "bool ";
         }
         _ => unimplemented!("Can't codegen function with return type: {:?}", return_type),
     }
@@ -193,10 +258,36 @@ fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -
                 var_name_stack.push(next_id);
                 next_id += 1;
             }
+            Bytecode::PushBool(val) => {
+                output += &format!("bool v{} = {};\n", next_id, val);
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
             Bytecode::Add => {
                 let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
                 let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
                 output += &format!("unsigned long long v{} = v{}+v{};\n", next_id, lhs, rhs);
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
+            Bytecode::Sub => {
+                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                output += &format!("unsigned long long v{} = v{}-v{};\n", next_id, lhs, rhs);
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
+            Bytecode::Mul => {
+                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                output += &format!("unsigned long long v{} = v{}*v{};\n", next_id, lhs, rhs);
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
+            Bytecode::Div => {
+                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                output += &format!("unsigned long long v{} = v{}/v{};\n", next_id, lhs, rhs);
                 var_name_stack.push(next_id);
                 next_id += 1;
             }
