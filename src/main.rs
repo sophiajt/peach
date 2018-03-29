@@ -55,7 +55,10 @@ fn eval_stmt(stmt: &Stmt) {
         Stmt::Semi(ref e, _) => {
             println!("Got value: {}", eval_expr(e));
         }
-        _ => unimplemented!("unknown stmt type"),
+        Stmt::Expr(ref e) => {
+            println!("Got value: {}", eval_expr(e));
+        }
+        _ => unimplemented!("unknown stmt type: {:#?}", stmt),
     }
 }
 
@@ -137,6 +140,11 @@ fn codegen_stmt(stmt: &Stmt) -> String {
                 output += ";\n";
             }
         },
+        Stmt::Expr(ref e) => {
+            output += "return ";
+            output += &codegen_expr(e);
+            output += ";\n";
+        }
         _ => unimplemented!("unknown stmt type"),
     }
 
@@ -188,7 +196,7 @@ fn main() {
                 }
             }
         }
-        println!("{:#?}", fn_hash);
+        //println!("{:#?}", fn_hash);
         eval_fun(&fn_hash["main"]);
         println!("codegen: {}", codegen_fun(&fn_hash["main"]));
     }
