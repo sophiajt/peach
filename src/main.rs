@@ -7,6 +7,9 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 
+extern crate time;
+use time::PreciseTime;
+
 #[derive(Debug)]
 struct Fun {
     decl: Box<FnDecl>,
@@ -50,22 +53,20 @@ fn eval_expr(expr: &Expr) -> u64 {
     }
 }
 
-fn eval_stmt(stmt: &Stmt) {
+fn eval_stmt(stmt: &Stmt) -> u64 {
     match stmt {
-        Stmt::Semi(ref e, _) => {
-            println!("Got value: {}", eval_expr(e));
-        }
-        Stmt::Expr(ref e) => {
-            println!("Got value: {}", eval_expr(e));
-        }
+        Stmt::Semi(ref e, _) => eval_expr(e),
+        Stmt::Expr(ref e) => eval_expr(e),
         _ => unimplemented!("unknown stmt type: {:#?}", stmt),
     }
 }
 
-fn eval_fun(fun: &Fun) {
+fn eval_fun(fun: &Fun) -> u64 {
+    let mut total = 0;
     for stmt in &fun.block.stmts {
-        eval_stmt(stmt);
+        total += eval_stmt(stmt);
     }
+    total
 }
 
 fn codegen_expr(expr: &Expr) -> String {
@@ -172,6 +173,7 @@ fn main() {
     let _ = args.next(); // executable name
 
     for arg in args {
+        let start = PreciseTime::now();
         let mut file = File::open(arg).expect("Unable to open file");
 
         let mut src = String::new();
@@ -196,8 +198,21 @@ fn main() {
                 }
             }
         }
+        let end = PreciseTime::now();
+        println!("processing time: {}", start.to(end));
+        let start = PreciseTime::now();
         //println!("{:#?}", fn_hash);
-        eval_fun(&fn_hash["main"]);
-        println!("codegen: {}", codegen_fun(&fn_hash["main"]));
+        if eval_fun(&fn_hash["main"]) == 0 {
+            println!("Main failed to produce a value != 0");
+        }
+        let end = PreciseTime::now();
+        println!("eval time (total): {}", start.to(end));
+        //println!("codegen: {}", codegen_fun(&fn_hash["main"]));
+
+        let start = PreciseTime::now();
+        let length = codegen_fun(&fn_hash["main"]).len();
+        let end = PreciseTime::now();
+        println!("codegen length: {}", length);
+        println!("compile time (total): {}", start.to(end));
     }
 }
