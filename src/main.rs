@@ -1,7 +1,6 @@
 #![feature(match_default_bindings, nll)]
 extern crate syn;
-use syn::{BinOp, Block, Expr, FnDecl, Item, ItemFn, Lit, Pat, Path, ReturnType, Stmt, Type,
-          TypePath};
+use syn::{BinOp, Expr, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
 
 use std::collections::HashMap;
 use std::env;
@@ -9,7 +8,7 @@ use std::fs::File;
 use std::io::Read;
 
 extern crate time;
-//use time::PreciseTime;
+use time::PreciseTime;
 
 type VarId = usize;
 
@@ -328,10 +327,13 @@ fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
     EvalValue::Void
 }
 
-fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -> String {
+fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>, output_fn: &str) {
     let mut output = String::new();
 
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
+
+    output += "#include <stdio.h>\n";
+    output += "#include <stdbool.h>\n";
 
     match return_type {
         Ty::U64 => {
@@ -427,14 +429,49 @@ fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -
         }
     }
 
-    output += "}";
+    output += "};\n";
 
-    output
+    output += "int main() { printf(\"output: %llu\", expr()); }";
+
+    let path = {
+        use std::fs::File;
+        use std::io::prelude::*;
+        use std::path::Path;
+
+        let dir = std::env::temp_dir();
+        let path = Path::new(&dir).join("madness.c");
+        let mut file =
+            File::create(path.clone()).expect("Can not create temporary .c file for output");
+        file.write_all(&output.as_bytes())
+            .expect("Failed to write output to .c file");
+        path
+    };
+
+    {
+        let start = PreciseTime::now();
+        println!("path: {:?}", path);
+        use std::process::Command;
+        let output = Command::new(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.13.26128\bin\Hostx64\x64\cl.exe")
+            //.arg("/Ox")
+            .arg(path)
+            .output()
+            .expect("failed to execute compiler");
+        let end = PreciseTime::now();
+        let duration = start
+            .to(end)
+            .to_std()
+            .expect("Can't convert duration to std duration");
+
+        println!(
+            "status: {} in {:.3} sec",
+            output.status,
+            duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
+        );
+        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
 }
 
 fn main() {
-    //let mut fn_hash = HashMap::new();
-
     let mut args = env::args();
     let _ = args.next(); // executable name
 
@@ -453,26 +490,12 @@ fn main() {
                     let (return_type, bytecode) = convert_fn_to_bytecode(item_fn);
                     println!("{:?}", bytecode);
                     println!("eval: {:?}", eval_bytecode(&bytecode));
-                    println!(
-                        "codegen: {}",
-                        codegen_bytecode(&fn_name, &return_type, &bytecode)
-                    );
+                    codegen_bytecode(&fn_name, &return_type, &bytecode, "local.exe");
                 }
                 _ => {
                     unimplemented!("Unknown item type");
                 }
             }
         }
-
-        /*
-        //println!("{:#?}", fn_hash);
-        if eval_fun(&fn_hash["main"]) == 0 {
-            println!("Main failed to produce a value != 0");
-        }
-        //println!("codegen: {}", codegen_fun(&fn_hash["main"]));
-
-        let length = codegen_fun(&fn_hash["main"]).len();
-        println!("codegen length: {}", length);
-        */
     }
 }
