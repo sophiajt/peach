@@ -255,7 +255,7 @@ fn convert_stmt_to_bytecode(
     }
 }
 
-fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>, Context) {
+fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>) {
     let mut output = Vec::new();
 
     let return_type = match &fun.decl.output {
@@ -269,10 +269,10 @@ fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>, Context) {
         convert_stmt_to_bytecode(stmt, &return_type, &mut output, &mut ctxt);
     }
 
-    (return_type, output, ctxt)
+    (return_type, output)
 }
 
-fn eval_bytecode(bytecode: &Vec<Bytecode>, ctxt: &Context) -> EvalValue {
+fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
     let mut value_stack: Vec<EvalValue> = vec![];
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
 
@@ -328,13 +328,10 @@ fn eval_bytecode(bytecode: &Vec<Bytecode>, ctxt: &Context) -> EvalValue {
     EvalValue::Void
 }
 
-fn codegen_bytecode(
-    fn_name: &str,
-    return_type: &Ty,
-    bytecode: &Vec<Bytecode>,
-    ctxt: &Context,
-) -> String {
+fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -> String {
     let mut output = String::new();
+
+    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
 
     match return_type {
         Ty::U64 => {
@@ -353,7 +350,9 @@ fn codegen_bytecode(
     output += "() {\n";
 
     let mut next_id = 0;
-    let mut var_name_stack = vec![];
+    //TODO: do we need the types here if we can just use 'auto' when we're not sure?
+    let mut var_name_stack: Vec<(usize, Ty)> = vec![];
+
     for bc in bytecode {
         match bc {
             Bytecode::ReturnVoid => {
@@ -361,78 +360,68 @@ fn codegen_bytecode(
                 break;
             }
             Bytecode::ReturnLastStackValue => {
-                let retval = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (retval, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
                 output += &format!("return v{};\n", retval);
                 break;
             }
             Bytecode::PushU64(val) => {
                 output += &format!("unsigned long long v{} = {};\n", next_id, val);
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, Ty::U64));
                 next_id += 1;
             }
             Bytecode::PushBool(val) => {
                 output += &format!("bool v{} = {};\n", next_id, val);
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, Ty::Bool));
                 next_id += 1;
             }
             Bytecode::Add => {
-                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
                 output += &format!("unsigned long long v{} = v{}+v{};\n", next_id, lhs, rhs);
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, Ty::U64));
                 next_id += 1;
             }
             Bytecode::Sub => {
-                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
                 output += &format!("unsigned long long v{} = v{}-v{};\n", next_id, lhs, rhs);
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, Ty::U64));
                 next_id += 1;
             }
             Bytecode::Mul => {
-                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
                 output += &format!("unsigned long long v{} = v{}*v{};\n", next_id, lhs, rhs);
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, Ty::U64));
                 next_id += 1;
             }
             Bytecode::Div => {
-                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let lhs = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
                 output += &format!("unsigned long long v{} = v{}/v{};\n", next_id, lhs, rhs);
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, Ty::U64));
                 next_id += 1;
             }
             Bytecode::VarDecl(var_id) => {
-                let var = &ctxt.vars[*var_id];
-                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
-
-                // TODO: we need a better way to output the type name
-                match var.ty {
-                    Ty::Bool => {
-                        output += &format!("bool {} = v{};\n", &var.ident, rhs);
-                    }
-                    Ty::U64 => {
-                        output += &format!("unsigned long long {} = v{};\n", &var.ident, rhs);
-                    }
-                    _ => unimplemented!("Can't create a variable of type {:?};\n", var.ty),
-                };
+                let last_pos = var_name_stack.len() - 1;
+                var_lookup.insert(*var_id, last_pos);
             }
             Bytecode::Ident(var_id) => {
-                let var = &ctxt.vars[*var_id];
+                let id = var_lookup[var_id];
                 // TODO: we need a better way to output the type name
+                let (ref var, ref ty) = var_name_stack[id];
 
-                match var.ty {
+                match ty {
                     Ty::Bool => {
-                        output += &format!("bool v{} = {};\n", next_id, &var.ident);
+                        output += &format!("bool v{} = v{};\n", next_id, var);
                     }
                     Ty::U64 => {
-                        output += &format!("unsigned long long v{} = {};\n", next_id, var.ident);
+                        output += &format!("unsigned long long v{} = v{};\n", next_id, var);
                     }
-                    _ => unimplemented!("Can't reference a variable of type {:?};\n", var.ty),
+                    _ => unimplemented!("Can't reference a variable of type {:?};\n", ty),
                 };
 
-                var_name_stack.push(next_id);
+                var_name_stack.push((next_id, ty.clone()));
                 next_id += 1;
             }
         }
@@ -461,12 +450,12 @@ fn main() {
             match item {
                 Item::Fn(item_fn) => {
                     let fn_name = item_fn.ident.to_string();
-                    let (return_type, bytecode, ctxt) = convert_fn_to_bytecode(item_fn);
+                    let (return_type, bytecode) = convert_fn_to_bytecode(item_fn);
                     println!("{:?}", bytecode);
-                    println!("eval: {:?}", eval_bytecode(&bytecode, &ctxt));
+                    println!("eval: {:?}", eval_bytecode(&bytecode));
                     println!(
                         "codegen: {}",
-                        codegen_bytecode(&fn_name, &return_type, &bytecode, &ctxt)
+                        codegen_bytecode(&fn_name, &return_type, &bytecode)
                     );
                 }
                 _ => {
