@@ -55,7 +55,7 @@ pub fn eval_bytecode(bytecode: &Vec<Bytecode>) -> Value {
             Bytecode::VarDecl(var_id) => {
                 var_lookup.insert(*var_id, value_stack.len() - 1);
             }
-            Bytecode::Ident(var_id) => {
+            Bytecode::Var(var_id) => {
                 let pos: usize = var_lookup[var_id];
                 value_stack.push(value_stack[pos].clone());
             }

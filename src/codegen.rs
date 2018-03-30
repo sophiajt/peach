@@ -82,7 +82,7 @@ pub fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode
                 let last_pos = var_name_stack.len() - 1;
                 var_lookup.insert(*var_id, last_pos);
             }
-            Bytecode::Ident(var_id) => {
+            Bytecode::Var(var_id) => {
                 let id = var_lookup[var_id];
                 // TODO: we need a better way to output the type name
                 let (ref var, ref ty) = var_name_stack[id];
