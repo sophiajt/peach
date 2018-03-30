@@ -10,6 +10,8 @@ mod bytecode;
 mod codegen;
 mod eval;
 
+use bytecode::BytecodeConverter;
+
 fn main() {
     let mut args = env::args();
     let _ = args.next(); // executable name
@@ -22,8 +24,13 @@ fn main() {
 
         let syntax_file = syn::parse_file(&src).expect("Unable to parse file");
 
-        let mut bc = bytecode::convert_file_to_bytecode(syntax_file);
-        let fn_bytecode = bc.get_fn_bytecode(&"expr".into());
+        let mut bc = BytecodeConverter::new();
+
+        // Step 1: Load up the parsed file so that we can lazily convert it
+        bc.load_file(syntax_file);
+
+        // Step 2: Tell the converter where to start, and we'll get the output
+        let fn_bytecode = bc.convert_fn("expr");
 
         println!("{:?}", fn_bytecode.bytecode);
         println!("eval: {:?}", eval::eval_bytecode(&fn_bytecode.bytecode));
