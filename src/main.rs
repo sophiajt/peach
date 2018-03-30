@@ -1,6 +1,7 @@
-#![feature(match_default_bindings)]
+#![feature(match_default_bindings, nll)]
 extern crate syn;
-use syn::{BinOp, Block, Expr, FnDecl, Item, ItemFn, Lit, Path, ReturnType, Stmt, Type, TypePath};
+use syn::{BinOp, Block, Expr, FnDecl, Item, ItemFn, Lit, Pat, Path, ReturnType, Stmt, Type,
+          TypePath};
 
 use std::collections::HashMap;
 use std::env;
@@ -9,6 +10,8 @@ use std::io::Read;
 
 extern crate time;
 //use time::PreciseTime;
+
+type VarId = usize;
 
 #[derive(Debug)]
 enum Bytecode {
@@ -20,9 +23,11 @@ enum Bytecode {
     Sub,
     Mul,
     Div,
+    VarDecl(VarId),
+    Ident(VarId),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Ty {
     U64,
     Bool,
@@ -30,12 +35,53 @@ enum Ty {
     Void,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum EvalValue {
     U64(u64),
     Bool(bool),
     Error,
     Void,
+}
+
+struct VarDecl {
+    ident: String,
+    ty: Ty,
+}
+
+impl VarDecl {
+    fn new(ident: String, ty: Ty) -> VarDecl {
+        VarDecl { ident, ty }
+    }
+}
+
+struct Context {
+    scope: Vec<usize>,
+    vars: Vec<VarDecl>,
+}
+
+impl Context {
+    fn new() -> Context {
+        Context {
+            scope: vec![],
+            vars: vec![],
+        }
+    }
+
+    fn add_var(&mut self, ident: String, ty: Ty) -> usize {
+        self.vars.push(VarDecl::new(ident, ty));
+        let pos = self.vars.len() - 1;
+        self.scope.push(pos);
+        pos
+    }
+
+    fn find_var(&self, ident: &String) -> usize {
+        for var in &self.scope {
+            if ident == &self.vars[*var].ident {
+                return *var;
+            }
+        }
+        unimplemented!("Could not find variable: {}", ident);
+    }
 }
 
 fn resolve_type(tp: &Box<Type>) -> Ty {
@@ -53,11 +99,14 @@ fn convert_expr_to_bytecode(
     expr: &Expr,
     expected_return_type: &Ty,
     bytecode: &mut Vec<Bytecode>,
+    ctxt: &mut Context,
 ) -> Ty {
     match expr {
         Expr::Return(er) => {
             let actual_return_type = match er.expr {
-                Some(ref inner) => convert_expr_to_bytecode(inner, expected_return_type, bytecode),
+                Some(ref inner) => {
+                    convert_expr_to_bytecode(inner, expected_return_type, bytecode, ctxt)
+                }
                 None => Ty::Void,
             };
 
@@ -88,8 +137,10 @@ fn convert_expr_to_bytecode(
         },
         Expr::Binary(eb) => match eb.op {
             BinOp::Add(_a) => {
-                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
-                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                let lhs_type =
+                    convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode, ctxt);
+                let rhs_type =
+                    convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode, ctxt);
                 if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
                     bytecode.push(Bytecode::Add);
                     Ty::U64
@@ -98,8 +149,10 @@ fn convert_expr_to_bytecode(
                 }
             }
             BinOp::Sub(_a) => {
-                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
-                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                let lhs_type =
+                    convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode, ctxt);
+                let rhs_type =
+                    convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode, ctxt);
                 if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
                     bytecode.push(Bytecode::Sub);
                     Ty::U64
@@ -108,8 +161,10 @@ fn convert_expr_to_bytecode(
                 }
             }
             BinOp::Mul(_a) => {
-                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
-                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                let lhs_type =
+                    convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode, ctxt);
+                let rhs_type =
+                    convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode, ctxt);
                 if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
                     bytecode.push(Bytecode::Mul);
                     Ty::U64
@@ -118,8 +173,10 @@ fn convert_expr_to_bytecode(
                 }
             }
             BinOp::Div(_a) => {
-                let lhs_type = convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode);
-                let rhs_type = convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode);
+                let lhs_type =
+                    convert_expr_to_bytecode(&*eb.left, expected_return_type, bytecode, ctxt);
+                let rhs_type =
+                    convert_expr_to_bytecode(&*eb.right, expected_return_type, bytecode, ctxt);
                 if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
                     bytecode.push(Bytecode::Div);
                     Ty::U64
@@ -129,18 +186,34 @@ fn convert_expr_to_bytecode(
             }
             _ => unimplemented!("Unknown operator: {:?}", eb.op),
         },
-        _ => unimplemented!("Unknown expr type"),
+        Expr::Path(ep) => {
+            let ident = ep.path.segments[0].ident.to_string();
+
+            let var_id = ctxt.find_var(&ident);
+            let var = &ctxt.vars[var_id];
+
+            bytecode.push(Bytecode::Ident(var_id));
+
+            var.ty.clone()
+        }
+        _ => unimplemented!("Unknown expr type: {:#?}", expr),
     }
 }
 
-fn convert_stmt_to_bytecode(stmt: &Stmt, expected_return_type: &Ty, bytecode: &mut Vec<Bytecode>) {
+fn convert_stmt_to_bytecode(
+    stmt: &Stmt,
+    expected_return_type: &Ty,
+    bytecode: &mut Vec<Bytecode>,
+    ctxt: &mut Context,
+) {
     match stmt {
         Stmt::Semi(ref e, _) => {
-            convert_expr_to_bytecode(e, expected_return_type, bytecode);
+            convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
         }
         Stmt::Expr(ref e) => {
             // TODO: refactor the two styles of return?
-            let actual_return_type = convert_expr_to_bytecode(e, expected_return_type, bytecode);
+            let actual_return_type =
+                convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
 
             if actual_return_type == *expected_return_type {
                 match actual_return_type {
@@ -155,11 +228,34 @@ fn convert_stmt_to_bytecode(stmt: &Stmt, expected_return_type: &Ty, bytecode: &m
                 );
             }
         }
+        Stmt::Local(ref l) => {
+            match l.init {
+                Some(ref foo) => {
+                    let ty =
+                        convert_expr_to_bytecode(&*foo.1, expected_return_type, bytecode, ctxt);
+
+                    //TODO check this type against the given type
+                    match l.ty {
+                        None => {
+                            let ident = match *l.pat {
+                                Pat::Ident(ref pi) => pi.ident.to_string(),
+                                _ => unimplemented!("Unsupport pattern in variable declaration"),
+                            };
+
+                            let var_id = ctxt.add_var(ident, ty);
+                            bytecode.push(Bytecode::VarDecl(var_id));
+                        }
+                        Some(ref _ty) => unimplemented!("Can't understand explicit var decl type"),
+                    }
+                }
+                None => unimplemented!("Can't yet handle inferred types or uninit variables"),
+            }
+        }
         _ => unimplemented!("Unknown stmt type: {:#?}", stmt),
     }
 }
 
-fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>) {
+fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>, Context) {
     let mut output = Vec::new();
 
     let return_type = match &fun.decl.output {
@@ -167,15 +263,19 @@ fn convert_fn_to_bytecode(fun: ItemFn) -> (Ty, Vec<Bytecode>) {
         ReturnType::Type(_, ref box_ty) => resolve_type(box_ty),
     };
 
+    let mut ctxt = Context::new();
+
     for stmt in &fun.block.stmts {
-        convert_stmt_to_bytecode(stmt, &return_type, &mut output);
+        convert_stmt_to_bytecode(stmt, &return_type, &mut output, &mut ctxt);
     }
 
-    (return_type, output)
+    (return_type, output, ctxt)
 }
 
-fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
+fn eval_bytecode(bytecode: &Vec<Bytecode>, ctxt: &Context) -> EvalValue {
     let mut value_stack: Vec<EvalValue> = vec![];
+    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
+
     for bc in bytecode {
         match bc {
             Bytecode::ReturnVoid => {
@@ -215,13 +315,25 @@ fn eval_bytecode(bytecode: &Vec<Bytecode>) -> EvalValue {
             Bytecode::PushBool(val) => {
                 value_stack.push(EvalValue::Bool(*val));
             }
+            Bytecode::VarDecl(var_id) => {
+                var_lookup.insert(*var_id, value_stack.len() - 1);
+            }
+            Bytecode::Ident(var_id) => {
+                let pos: usize = var_lookup[var_id];
+                value_stack.push(value_stack[pos].clone());
+            }
         }
     }
 
     EvalValue::Void
 }
 
-fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -> String {
+fn codegen_bytecode(
+    fn_name: &str,
+    return_type: &Ty,
+    bytecode: &Vec<Bytecode>,
+    ctxt: &Context,
+) -> String {
     let mut output = String::new();
 
     match return_type {
@@ -291,6 +403,38 @@ fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) -
                 var_name_stack.push(next_id);
                 next_id += 1;
             }
+            Bytecode::VarDecl(var_id) => {
+                let var = &ctxt.vars[*var_id];
+                let rhs = var_name_stack.pop().expect("Add needs a rhs in codegen");
+
+                // TODO: we need a better way to output the type name
+                match var.ty {
+                    Ty::Bool => {
+                        output += &format!("bool {} = v{};\n", &var.ident, rhs);
+                    }
+                    Ty::U64 => {
+                        output += &format!("unsigned long long {} = v{};\n", &var.ident, rhs);
+                    }
+                    _ => unimplemented!("Can't create a variable of type {:?};\n", var.ty),
+                };
+            }
+            Bytecode::Ident(var_id) => {
+                let var = &ctxt.vars[*var_id];
+                // TODO: we need a better way to output the type name
+
+                match var.ty {
+                    Ty::Bool => {
+                        output += &format!("bool v{} = {};\n", next_id, &var.ident);
+                    }
+                    Ty::U64 => {
+                        output += &format!("unsigned long long v{} = {};\n", next_id, var.ident);
+                    }
+                    _ => unimplemented!("Can't reference a variable of type {:?};\n", var.ty),
+                };
+
+                var_name_stack.push(next_id);
+                next_id += 1;
+            }
         }
     }
 
@@ -317,12 +461,12 @@ fn main() {
             match item {
                 Item::Fn(item_fn) => {
                     let fn_name = item_fn.ident.to_string();
-                    let (return_type, bytecode) = convert_fn_to_bytecode(item_fn);
+                    let (return_type, bytecode, ctxt) = convert_fn_to_bytecode(item_fn);
                     println!("{:?}", bytecode);
-                    println!("eval: {:?}", eval_bytecode(&bytecode));
+                    println!("eval: {:?}", eval_bytecode(&bytecode, &ctxt));
                     println!(
                         "codegen: {}",
-                        codegen_bytecode(&fn_name, &return_type, &bytecode)
+                        codegen_bytecode(&fn_name, &return_type, &bytecode, &ctxt)
                     );
                 }
                 _ => {

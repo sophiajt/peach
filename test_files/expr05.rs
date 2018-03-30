@@ -1,3 +1,4 @@
-fn expr() {
-    let (x, _) = 3;
+fn expr() -> u64 {
+    let x = 3;
+    x
 }
