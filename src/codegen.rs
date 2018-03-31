@@ -25,16 +25,41 @@ fn compile_fn_header(fn_name: &str, fun: &Fun) -> String {
 
 fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
-
     let mut output = String::new();
+
+    //TODO: do we need the types here if we can just use 'auto' when we're not sure?
+    let mut var_name_stack: Vec<(usize, Ty)> = vec![];
+
     output += &codegen_type(&fun.return_ty);
     output += " ";
     output += fn_name;
-    output += "() {\n";
+    output += "(";
 
-    let mut next_id = 0;
-    //TODO: do we need the types here if we can just use 'auto' when we're not sure?
-    let mut var_name_stack: Vec<(usize, Ty)> = vec![];
+    let mut first = true;
+    for param in &fun.params {
+        output += &format!(
+            "{}{} {}",
+            if !first { ", " } else { "" },
+            codegen_type(&param.ty),
+            param.name
+        );
+        first = false;
+    }
+
+    output += ") {\n";
+    for param in &fun.params {
+        output += &format!(
+            "{} v{} = {};\n",
+            codegen_type(&param.ty),
+            param.var_id,
+            param.name
+        );
+        var_name_stack.push((param.var_id, param.ty.clone()));
+        var_lookup.insert(param.var_id, var_name_stack.len() - 1);
+    }
+    let mut next_id = fun.params.len();
+
+    println!("debug: {}", output);
 
     for code in &fun.bytecode {
         match code {
@@ -102,11 +127,23 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
             Bytecode::Call(fn_name) => {
                 let fun = bc.get_fn(fn_name);
                 output += &format!(
-                    "{} v{} = {}();\n",
+                    "{} v{} = {}(",
                     codegen_type(&fun.return_ty),
                     next_id,
                     fn_name
                 );
+
+                let mut offset = fun.params.len();
+                let var_name_stack_len = var_name_stack.len();
+                while offset > 0 {
+                    output += &format!("v{}", var_name_stack[var_name_stack_len - offset].0);
+                    if offset > 1 {
+                        output += ", "
+                    }
+                    offset -= 1;
+                }
+
+                output += ");\n";
                 var_name_stack.push((next_id, Ty::Bool));
                 next_id += 1;
             }

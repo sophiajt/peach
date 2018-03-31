@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use syn::{self, BinOp, Expr, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
+use syn::{self, BinOp, Expr, FnArg, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
 
 type VarId = usize;
 
@@ -26,8 +26,21 @@ pub enum Ty {
     Void,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub name: String,
+    pub var_id: VarId,
+    pub ty: Ty,
+}
+impl Param {
+    fn new(name: String, var_id: VarId, ty: Ty) -> Param {
+        Param { name, var_id, ty }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Fun {
+    pub params: Vec<Param>,
     pub return_ty: Ty,
     pub bytecode: Vec<Bytecode>,
 }
@@ -70,22 +83,16 @@ impl BytecodeEngine {
     }
 
     pub fn process(&mut self, starting_fn_name: &str) {
-        let (return_ty, bytecode) = self.convert_fn_to_bytecode(starting_fn_name);
-        self.processed_fns.insert(
-            starting_fn_name.to_string(),
-            Fun {
-                return_ty,
-                bytecode,
-            },
-        );
+        let fun = self.convert_fn_to_bytecode(starting_fn_name);
+        self.processed_fns.insert(starting_fn_name.to_string(), fun);
     }
 
     fn add_lazy(&mut self, fn_name: String, item_fn: ItemFn) {
         self.lazy_fns.insert(fn_name, item_fn);
     }
 
-    fn resolve_type(&mut self, tp: &Box<Type>) -> Ty {
-        match **tp {
+    fn resolve_type(&mut self, tp: &Type) -> Ty {
+        match *tp {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
                 "u64" => Ty::U64,
                 "bool" => Ty::Bool,
@@ -247,11 +254,15 @@ impl BytecodeEngine {
                     self.process(&ident);
 
                     let target_fn = self.get_fn(&ident);
-                    //let (return_ty, _) = self.convert_fn_to_bytecode(&ident);
+                    let return_ty = target_fn.return_ty.clone();
+
+                    for arg in &ec.args {
+                        self.convert_expr_to_bytecode(arg, expected_return_type, bytecode, ctxt);
+                    }
 
                     bytecode.push(Bytecode::Call(ident));
 
-                    target_fn.return_ty.clone()
+                    return_ty
                 }
                 _ => unimplemented!("unknown function call type: {:#?}", ec.func),
             },
@@ -325,27 +336,50 @@ impl BytecodeEngine {
         }
     }
 
-    fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> (Ty, Vec<Bytecode>) {
+    fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> Fun {
         if self.processed_fns.contains_key(fn_name) {
             let result = &self.processed_fns[fn_name];
-            (result.return_ty.clone(), result.bytecode.clone())
+            result.clone()
         } else {
             let item_fn = self.lazy_fns[fn_name].clone();
 
-            let mut output = Vec::new();
+            let mut bytecode = Vec::new();
 
-            let return_type = match &item_fn.decl.output {
+            let return_ty = match &item_fn.decl.output {
                 ReturnType::Default => Ty::Void,
                 ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
             };
 
             let mut ctxt = Context::new();
+            let mut params = vec![];
 
-            for stmt in &item_fn.block.stmts {
-                self.convert_stmt_to_bytecode(stmt, &return_type, &mut output, &mut ctxt);
+            // process function params
+            for input in &item_fn.decl.inputs {
+                match input {
+                    FnArg::Captured(ref capture) => {
+                        match capture.pat {
+                            Pat::Ident(ref pi) => {
+                                let ident = pi.ident.to_string();
+                                let ty = self.resolve_type(&capture.ty);
+                                let var_id = ctxt.add_var(ident.clone(), ty.clone());
+                                params.push(Param::new(ident, var_id, ty));
+                            }
+                            _ => unimplemented!("Unsupported pattern type in function parameter"),
+                        };
+                    }
+                    _ => unimplemented!("Function argument of {:?} is not supported", input),
+                }
             }
 
-            (return_type, output)
+            for stmt in &item_fn.block.stmts {
+                self.convert_stmt_to_bytecode(stmt, &return_ty, &mut bytecode, &mut ctxt);
+            }
+
+            Fun {
+                params,
+                return_ty,
+                bytecode,
+            }
         }
     }
 }

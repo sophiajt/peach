@@ -13,6 +13,10 @@ Need a better intermediate format.  Preferably something we can convert to post 
 Some possible next steps:
 
 * Add functions and function calls
+  * Basic ones are done
+  * Now adding params
+  * TODO: Check types of each argument
+  * TODO: Eval needs to be aware of stack with args
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)
 * Should probably fix compiling expr02.rs
