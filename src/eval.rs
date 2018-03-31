@@ -9,7 +9,12 @@ pub enum Value {
     Void,
 }
 
-fn eval_fn_bytecode(bc: &BytecodeEngine, fun: &Fun, value_stack: &mut Vec<Value>) -> Value {
+fn eval_fn_bytecode(
+    bc: &BytecodeEngine,
+    fun: &Fun,
+    value_stack: &mut Vec<Value>,
+    debug_capture: &mut Option<String>,
+) -> Value {
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
 
     let mut param_offset = fun.params.len();
@@ -66,11 +71,18 @@ fn eval_fn_bytecode(bc: &BytecodeEngine, fun: &Fun, value_stack: &mut Vec<Value>
             }
             Bytecode::Call(fn_name) => {
                 let target_fun = bc.get_fn(fn_name);
-                let result = eval_fn_bytecode(bc, &target_fun, value_stack);
+                let result = eval_fn_bytecode(bc, &target_fun, value_stack, debug_capture);
                 value_stack.push(result);
             }
             Bytecode::DebugPrint => match value_stack.pop() {
-                Some(s) => println!("DEBUG: {:?}", s),
+                Some(s) => match debug_capture {
+                    Some(ref mut debug_log) => {
+                        debug_log.push_str(&format!("DEBUG: {:?}\n", s));
+                    }
+                    None => {
+                        println!("DEBUG: {:?}", s);
+                    }
+                },
                 _ => unimplemented!("Internal error: debug printing missing value"),
             },
         }
@@ -79,10 +91,14 @@ fn eval_fn_bytecode(bc: &BytecodeEngine, fun: &Fun, value_stack: &mut Vec<Value>
     Value::Void
 }
 
-pub fn eval_engine(bc: &mut BytecodeEngine, starting_fn_name: &str) -> Value {
+pub fn eval_engine(
+    bc: &BytecodeEngine,
+    starting_fn_name: &str,
+    debug_capture: &mut Option<String>,
+) -> Value {
     // begin evaluating with the first function
     let fun = bc.get_fn(starting_fn_name);
     let mut value_stack: Vec<Value> = vec![];
 
-    eval_fn_bytecode(bc, &fun, &mut value_stack)
+    eval_fn_bytecode(bc, &fun, &mut value_stack, debug_capture)
 }

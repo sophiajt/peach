@@ -172,7 +172,7 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     output
 }
 
-pub fn compile_bytecode(bc: &BytecodeEngine) {
+pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
     let mut output = String::new();
 
     output += "#include <stdio.h>\n";
@@ -194,28 +194,37 @@ pub fn compile_bytecode(bc: &BytecodeEngine) {
         use std::io::prelude::*;
         use std::path::Path;
 
+        let input_path = Path::new(input_fname);
+
         let dir = ::std::env::temp_dir();
-        let path = Path::new(&dir).join("madness.c");
+        let path = Path::new(&dir)
+            .join(input_path.file_name().unwrap())
+            .with_extension("c");
         let mut file =
-            File::create(path.clone()).expect("Can not create temporary .c file for output");
+            File::create(path.clone()).expect(&format!("Can not create {:?} for output", path));
         file.write_all(&output.as_bytes())
             .expect("Failed to write output to .c file");
         path
     };
 
-    compile_file(path);
+    compile_file(path)
 }
 
 #[cfg(windows)]
-fn compile_file(path: ::std::path::PathBuf) {
+fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let start = PreciseTime::now();
     //println!("path: {:?}", path);
     use std::process::Command;
+
+    let output_fname = String::new() + path.with_extension("exe").to_str().unwrap();
+    let output_objname = String::new() + path.with_extension("obj").to_str().unwrap();
+
     let output = Command::new(r"cl.exe")
             //.arg("/Ox")
+            .arg(&format!("/Fe{}", output_fname))
+            .arg(&format!("/Fo{}", output_objname))
             .arg(path)
-            .output()
-            .expect("failed to execute compiler");
+            .output()?;
     let end = PreciseTime::now();
     let duration = start
         .to(end)
@@ -232,14 +241,22 @@ fn compile_file(path: ::std::path::PathBuf) {
         duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
     );
 
-    if !output.status.success() {
-        println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    if output.status.success() {
+        Ok(output_fname)
+    } else {
+        use std::io::{Error, ErrorKind};
+
+        let compile_stdout = String::from_utf8(output.stdout).unwrap();
+        let compile_stderr = String::from_utf8(output.stderr).unwrap();
+
+        let combined_compile_msg = compile_stdout + &compile_stderr;
+
+        Err(Error::new(ErrorKind::Other, combined_compile_msg))
     }
 }
 
 #[cfg(unix)]
-fn compile_file(path: ::std::path::PathBuf) {
+fn compile_file(path: ::std::path::PathBuf) -> ::std::process::ExitStatus {
     let start = PreciseTime::now();
     println!("path: {:?}", path);
     use std::process::Command;
@@ -268,4 +285,6 @@ fn compile_file(path: ::std::path::PathBuf) {
         println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
         println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
     }
+
+    output.status
 }

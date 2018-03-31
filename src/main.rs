@@ -9,6 +9,7 @@ use std::io::Read;
 mod bytecode;
 mod codegen;
 mod eval;
+mod tests;
 
 use bytecode::BytecodeEngine;
 
@@ -17,7 +18,7 @@ fn main() {
     let _ = args.next(); // executable name
 
     for arg in args {
-        let mut file = File::open(arg).expect("Unable to open file");
+        let mut file = File::open(&arg).expect("Unable to open file");
 
         let mut src = String::new();
         file.read_to_string(&mut src).expect("Unable to read file");
@@ -33,8 +34,8 @@ fn main() {
         //println!("{:#?}", bc.processed_fns);
 
         println!("Eval result:");
-        eval::eval_engine(&mut bc, "main");
-        println!("\nCompile result:");
-        codegen::compile_bytecode(&mut bc);
+        eval::eval_engine(&bc, "main", &mut None);
+        let compile_result = codegen::compile_bytecode(&bc, &arg);
+        println!("\nCompile result: {:?}", compile_result);
     }
 }

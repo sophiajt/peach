@@ -20,7 +20,6 @@ Some possible next steps:
 * while
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)
-* Should probably fix compiling expr02.rs
 
 Non-next steps:
 
