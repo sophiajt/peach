@@ -1,3 +1,3 @@
-fn expr() -> u64 {
-    return 4;
+fn main() {
+    __debug__(4);
 }

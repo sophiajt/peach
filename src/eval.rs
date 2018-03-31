@@ -69,6 +69,10 @@ fn eval_fn_bytecode(bc: &BytecodeEngine, fun: &Fun, value_stack: &mut Vec<Value>
                 let result = eval_fn_bytecode(bc, &target_fun, value_stack);
                 value_stack.push(result);
             }
+            Bytecode::DebugPrint => match value_stack.pop() {
+                Some(s) => println!("DEBUG: {:?}", s),
+                _ => unimplemented!("Internal error: debug printing missing value"),
+            },
         }
     }
 

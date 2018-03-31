@@ -29,11 +29,12 @@ fn main() {
         bc.load_file(syntax_file);
 
         // Step 2: Convert to bytecode from the given location
-        bc.process("expr");
+        bc.process("main");
+        //println!("{:#?}", bc.processed_fns);
 
-        println!("{:#?}", bc.processed_fns);
-
-        println!("eval: {:?}", eval::eval_engine(&mut bc, "expr"));
+        println!("Eval result:");
+        eval::eval_engine(&mut bc, "main");
+        println!("\nCompile result:");
         codegen::compile_bytecode(&mut bc);
     }
 }

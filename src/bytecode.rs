@@ -16,6 +16,7 @@ pub enum Bytecode {
     VarDecl(VarId),
     Var(VarId),
     Call(String),
+    DebugPrint,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -251,18 +252,34 @@ impl BytecodeEngine {
             Expr::Call(ec) => match *ec.func {
                 Expr::Path(ref ep) => {
                     let ident = ep.path.segments[0].ident.to_string();
-                    self.process(&ident);
+                    if ident == "__debug__" {
+                        self.convert_expr_to_bytecode(
+                            &ec.args[0],
+                            expected_return_type,
+                            bytecode,
+                            ctxt,
+                        );
+                        bytecode.push(Bytecode::DebugPrint);
+                        Ty::Void
+                    } else {
+                        self.process(&ident);
 
-                    let target_fn = self.get_fn(&ident);
-                    let return_ty = target_fn.return_ty.clone();
+                        let target_fn = self.get_fn(&ident);
+                        let return_ty = target_fn.return_ty.clone();
 
-                    for arg in &ec.args {
-                        self.convert_expr_to_bytecode(arg, expected_return_type, bytecode, ctxt);
+                        for arg in &ec.args {
+                            self.convert_expr_to_bytecode(
+                                arg,
+                                expected_return_type,
+                                bytecode,
+                                ctxt,
+                            );
+                        }
+
+                        bytecode.push(Bytecode::Call(ident));
+
+                        return_ty
                     }
-
-                    bytecode.push(Bytecode::Call(ident));
-
-                    return_ty
                 }
                 _ => unimplemented!("unknown function call type: {:#?}", ec.func),
             },

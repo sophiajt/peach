@@ -59,8 +59,6 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     }
     let mut next_id = fun.params.len();
 
-    println!("debug: {}", output);
-
     for code in &fun.bytecode {
         match code {
             Bytecode::ReturnVoid => {
@@ -68,7 +66,9 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 break;
             }
             Bytecode::ReturnLastStackValue => {
-                let (retval, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (retval, _) = var_name_stack
+                    .pop()
+                    .expect("Add needs a value to return in codegen");
                 output += &format!("return v{};\n", retval);
                 break;
             }
@@ -144,8 +144,26 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 }
 
                 output += ");\n";
-                var_name_stack.push((next_id, Ty::Bool));
+                var_name_stack.push((next_id, fun.return_ty.clone()));
                 next_id += 1;
+            }
+            Bytecode::DebugPrint => {
+                let (debug_id, debug_ty) = var_name_stack
+                    .pop()
+                    .expect("Add needs a value to debug print in codegen");
+
+                output += &format!(
+                    "printf(\"DEBUG: {}\\n\", v{});\n",
+                    match debug_ty {
+                        Ty::Bool => "%s",
+                        Ty::U64 => "%llu",
+                        _ => unimplemented!("Can't debug print values of type {:?}", debug_ty),
+                    },
+                    match debug_ty {
+                        Ty::Bool => format!("{}?\"true\":\"false\"", debug_id),
+                        _ => format!("{}", debug_id),
+                    }
+                );
             }
         }
     }
@@ -169,9 +187,7 @@ pub fn compile_bytecode(bc: &BytecodeEngine) {
         output += &compile_fn(bc, fn_name, fun);
     }
 
-    output += "int main() { printf(\"output: %llu\", expr()); }";
-
-    println!("{}", output);
+    //println!("{}", output);
 
     let path = {
         use std::fs::File;
@@ -193,7 +209,7 @@ pub fn compile_bytecode(bc: &BytecodeEngine) {
 #[cfg(windows)]
 fn compile_file(path: ::std::path::PathBuf) {
     let start = PreciseTime::now();
-    println!("path: {:?}", path);
+    //println!("path: {:?}", path);
     use std::process::Command;
     let output = Command::new(r"cl.exe")
             //.arg("/Ox")
@@ -208,7 +224,11 @@ fn compile_file(path: ::std::path::PathBuf) {
 
     println!(
         "status: {} in {:.3} sec",
-        output.status,
+        if output.status.success() {
+            "success"
+        } else {
+            "fail"
+        },
         duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
     );
 
@@ -236,7 +256,11 @@ fn compile_file(path: ::std::path::PathBuf) {
 
     println!(
         "status: {} in {:.3} sec",
-        output.status,
+        if output.status.success() {
+            "success"
+        } else {
+            "fail"
+        },
         duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
     );
 

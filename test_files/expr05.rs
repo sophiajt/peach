@@ -1,4 +1,4 @@
-fn expr() -> u64 {
+fn main() {
     let x = 3;
-    x
+    __debug__(x);
 }
