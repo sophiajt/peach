@@ -33,6 +33,6 @@ fn main() {
         bc.process("expr");
 
         println!("eval: {:?}", eval::eval_engine(&mut bc, "expr"));
-        codegen::compile_bytecode(&mut bc, "expr");
+        codegen::compile_bytecode(&mut bc);
     }
 }

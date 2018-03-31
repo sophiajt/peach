@@ -117,7 +117,7 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     output
 }
 
-pub fn compile_bytecode(bc: &BytecodeEngine, _starting_fn_name: &str) {
+pub fn compile_bytecode(bc: &BytecodeEngine) {
     let mut output = String::new();
 
     output += "#include <stdio.h>\n";
@@ -150,30 +150,61 @@ pub fn compile_bytecode(bc: &BytecodeEngine, _starting_fn_name: &str) {
         path
     };
 
-    {
-        let start = PreciseTime::now();
-        println!("path: {:?}", path);
-        use std::process::Command;
-        let output = Command::new(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.13.26128\bin\Hostx64\x64\cl.exe")
+    compile_file(path);
+}
+
+#[cfg(windows)]
+fn compile_file(path: ::std::path::PathBuf) {
+    let start = PreciseTime::now();
+    println!("path: {:?}", path);
+    use std::process::Command;
+    let output = Command::new(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.13.26128\bin\Hostx64\x64\cl.exe")
             //.arg("/Ox")
             .arg(path)
             .output()
             .expect("failed to execute compiler");
-        let end = PreciseTime::now();
-        let duration = start
-            .to(end)
-            .to_std()
-            .expect("Can't convert duration to std duration");
+    let end = PreciseTime::now();
+    let duration = start
+        .to(end)
+        .to_std()
+        .expect("Can't convert duration to std duration");
 
-        println!(
-            "status: {} in {:.3} sec",
-            output.status,
-            duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
-        );
+    println!(
+        "status: {} in {:.3} sec",
+        output.status,
+        duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
+    );
 
-        if !output.status.success() {
-            println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-            println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-        }
+    if !output.status.success() {
+        println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
+}
+
+#[cfg(unix)]
+fn compile_file(path: ::std::path::PathBuf) {
+    let start = PreciseTime::now();
+    println!("path: {:?}", path);
+    use std::process::Command;
+    let output = Command::new(r"clang")
+            //.arg("/Ox")
+            .arg(path)
+            .output()
+            .expect("failed to execute compiler");
+    let end = PreciseTime::now();
+    let duration = start
+        .to(end)
+        .to_std()
+        .expect("Can't convert duration to std duration");
+
+    println!(
+        "status: {} in {:.3} sec",
+        output.status,
+        duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
+    );
+
+    if !output.status.success() {
+        println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
     }
 }
