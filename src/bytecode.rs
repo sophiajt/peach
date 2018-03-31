@@ -3,7 +3,7 @@ use syn::{self, BinOp, Expr, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
 
 type VarId = usize;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Bytecode {
     ReturnLastStackValue,
     ReturnVoid,
@@ -15,6 +15,7 @@ pub enum Bytecode {
     Div,
     VarDecl(VarId),
     Var(VarId),
+    Call(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -31,31 +32,27 @@ pub struct Fun {
     pub bytecode: Vec<Bytecode>,
 }
 
-pub struct BytecodeConverter {
+pub struct BytecodeEngine {
     lazy_fns: HashMap<String, ItemFn>,
-    converted_fns: HashMap<String, Fun>,
+
+    //TODO probably don't want this to be public
+    pub processed_fns: HashMap<String, Fun>,
 }
 
-impl BytecodeConverter {
-    pub fn new() -> BytecodeConverter {
-        BytecodeConverter {
+impl BytecodeEngine {
+    pub fn new() -> BytecodeEngine {
+        BytecodeEngine {
             lazy_fns: HashMap::new(),
-            converted_fns: HashMap::new(),
+            processed_fns: HashMap::new(),
         }
     }
 
-    pub fn convert_fn(&mut self, fn_name: &str) -> &Fun {
-        if !self.converted_fns.contains_key(fn_name) {
-            let (return_ty, bytecode) = self.convert_fn_to_bytecode(fn_name);
-            self.converted_fns.insert(
-                fn_name.to_string(),
-                Fun {
-                    return_ty,
-                    bytecode,
-                },
-            );
+    // Gets the bytecoded function for the given name
+    pub fn get_fn(&self, fn_name: &str) -> &Fun {
+        if !self.processed_fns.contains_key(fn_name) {
+            unimplemented!("Function {} needs to be precomputed", fn_name);
         }
-        &self.converted_fns[fn_name]
+        &self.processed_fns[fn_name]
     }
 
     pub fn load_file(&mut self, syntax_file: syn::File) {
@@ -70,6 +67,17 @@ impl BytecodeConverter {
                 }
             }
         }
+    }
+
+    pub fn process(&mut self, starting_fn_name: &str) {
+        let (return_ty, bytecode) = self.convert_fn_to_bytecode(starting_fn_name);
+        self.processed_fns.insert(
+            starting_fn_name.to_string(),
+            Fun {
+                return_ty,
+                bytecode,
+            },
+        );
     }
 
     fn add_lazy(&mut self, fn_name: String, item_fn: ItemFn) {
@@ -233,6 +241,20 @@ impl BytecodeConverter {
 
                 var.ty.clone()
             }
+            Expr::Call(ec) => match *ec.func {
+                Expr::Path(ref ep) => {
+                    let ident = ep.path.segments[0].ident.to_string();
+                    self.process(&ident);
+
+                    let target_fn = self.get_fn(&ident);
+                    //let (return_ty, _) = self.convert_fn_to_bytecode(&ident);
+
+                    bytecode.push(Bytecode::Call(ident));
+
+                    target_fn.return_ty.clone()
+                }
+                _ => unimplemented!("unknown function call type: {:#?}", ec.func),
+            },
             _ => unimplemented!("Unknown expr type: {:#?}", expr),
         }
     }
@@ -304,22 +326,27 @@ impl BytecodeConverter {
     }
 
     fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> (Ty, Vec<Bytecode>) {
-        let item_fn = self.lazy_fns[fn_name].clone();
+        if self.processed_fns.contains_key(fn_name) {
+            let result = &self.processed_fns[fn_name];
+            (result.return_ty.clone(), result.bytecode.clone())
+        } else {
+            let item_fn = self.lazy_fns[fn_name].clone();
 
-        let mut output = Vec::new();
+            let mut output = Vec::new();
 
-        let return_type = match &item_fn.decl.output {
-            ReturnType::Default => Ty::Void,
-            ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
-        };
+            let return_type = match &item_fn.decl.output {
+                ReturnType::Default => Ty::Void,
+                ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
+            };
 
-        let mut ctxt = Context::new();
+            let mut ctxt = Context::new();
 
-        for stmt in &item_fn.block.stmts {
-            self.convert_stmt_to_bytecode(stmt, &return_type, &mut output, &mut ctxt);
+            for stmt in &item_fn.block.stmts {
+                self.convert_stmt_to_bytecode(stmt, &return_type, &mut output, &mut ctxt);
+            }
+
+            (return_type, output)
         }
-
-        (return_type, output)
     }
 }
 

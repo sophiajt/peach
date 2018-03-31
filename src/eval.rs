@@ -1,4 +1,4 @@
-use bytecode::Bytecode;
+use bytecode::{Bytecode, BytecodeEngine};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -9,12 +9,12 @@ pub enum Value {
     Void,
 }
 
-pub fn eval_bytecode(bytecode: &Vec<Bytecode>) -> Value {
+fn eval_bytecode(bc: &BytecodeEngine, bytecode: &Vec<Bytecode>) -> Value {
     let mut value_stack: Vec<Value> = vec![];
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
 
-    for bc in bytecode {
-        match bc {
+    for code in bytecode {
+        match code {
             Bytecode::ReturnVoid => {
                 return Value::Void;
             }
@@ -59,8 +59,20 @@ pub fn eval_bytecode(bytecode: &Vec<Bytecode>) -> Value {
                 let pos: usize = var_lookup[var_id];
                 value_stack.push(value_stack[pos].clone());
             }
+            Bytecode::Call(fn_name) => {
+                let target_bytecode = bc.get_fn(fn_name);
+                let result = eval_bytecode(bc, &target_bytecode.bytecode);
+                value_stack.push(result);
+            }
         }
     }
 
     Value::Void
+}
+
+pub fn eval_engine(bc: &mut BytecodeEngine, starting_fn_name: &str) -> Value {
+    // begin evaluating with the first function
+    let fn_bytecode = bc.get_fn(starting_fn_name);
+
+    eval_bytecode(bc, &fn_bytecode.bytecode)
 }

@@ -1,27 +1,34 @@
-use bytecode::{Bytecode, Ty};
+use bytecode::{Bytecode, BytecodeEngine, Fun, Ty};
 use std::collections::HashMap;
 use time::PreciseTime;
 
 fn codegen_type(ty: &Ty) -> String {
     let codegen_ty = match ty {
-        Ty::U64 => "unsigned long long ".into(),
-        Ty::Void => "void ".into(),
-        Ty::Bool => "bool ".into(),
+        Ty::U64 => "unsigned long long".into(),
+        Ty::Void => "void".into(),
+        Ty::Bool => "bool".into(),
         _ => unimplemented!("Can't codegen type: {:?}", ty),
     };
     codegen_ty
 }
 
-pub fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode>) {
+fn compile_fn_header(fn_name: &str, fun: &Fun) -> String {
     let mut output = String::new();
+    //TODO: tighten this up with a format!
+    output += &codegen_type(&fun.return_ty);
+    output += " ";
+    output += fn_name;
+    output += "();\n";
 
+    output
+}
+
+fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
 
-    output += "#include <stdio.h>\n";
-    output += "#include <stdbool.h>\n";
-
-    output += &codegen_type(return_type);
-
+    let mut output = String::new();
+    output += &codegen_type(&fun.return_ty);
+    output += " ";
     output += fn_name;
     output += "() {\n";
 
@@ -29,8 +36,8 @@ pub fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode
     //TODO: do we need the types here if we can just use 'auto' when we're not sure?
     let mut var_name_stack: Vec<(usize, Ty)> = vec![];
 
-    for bc in bytecode {
-        match bc {
+    for code in &fun.bytecode {
+        match code {
             Bytecode::ReturnVoid => {
                 output += "return;\n";
                 break;
@@ -92,12 +99,42 @@ pub fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode
                 var_name_stack.push((next_id, ty.clone()));
                 next_id += 1;
             }
+            Bytecode::Call(fn_name) => {
+                let fun = bc.get_fn(fn_name);
+                output += &format!(
+                    "{} v{} = {}();\n",
+                    codegen_type(&fun.return_ty),
+                    next_id,
+                    fn_name
+                );
+                var_name_stack.push((next_id, Ty::Bool));
+                next_id += 1;
+            }
         }
     }
 
     output += "};\n";
+    output
+}
+
+pub fn compile_bytecode(bc: &BytecodeEngine, _starting_fn_name: &str) {
+    let mut output = String::new();
+
+    output += "#include <stdio.h>\n";
+    output += "#include <stdbool.h>\n";
+
+    for fn_name in bc.processed_fns.keys() {
+        let fun = bc.get_fn(fn_name);
+        output += &compile_fn_header(fn_name, fun);
+    }
+    for fn_name in bc.processed_fns.keys() {
+        let fun = bc.get_fn(fn_name);
+        output += &compile_fn(bc, fn_name, fun);
+    }
 
     output += "int main() { printf(\"output: %llu\", expr()); }";
+
+    println!("{}", output);
 
     let path = {
         use std::fs::File;
@@ -133,6 +170,10 @@ pub fn codegen_bytecode(fn_name: &str, return_type: &Ty, bytecode: &Vec<Bytecode
             output.status,
             duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
         );
-        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+
+        if !output.status.success() {
+            println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+            println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+        }
     }
 }
