@@ -158,7 +158,7 @@ fn compile_file(path: ::std::path::PathBuf) {
     let start = PreciseTime::now();
     println!("path: {:?}", path);
     use std::process::Command;
-    let output = Command::new(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.13.26128\bin\Hostx64\x64\cl.exe")
+    let output = Command::new(r"cl.exe")
             //.arg("/Ox")
             .arg(path)
             .output()
