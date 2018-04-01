@@ -144,6 +144,9 @@ impl BytecodeEngine {
                 }
                 _ => unimplemented!("unknown literal: {:?}", el),
             },
+            Expr::Paren(ep) => {
+                self.convert_expr_to_bytecode(&*ep.expr, expected_return_type, bytecode, ctxt)
+            }
             Expr::Binary(eb) => match eb.op {
                 BinOp::Add(_a) => {
                     let lhs_type = self.convert_expr_to_bytecode(
