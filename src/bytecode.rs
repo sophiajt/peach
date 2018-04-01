@@ -214,6 +214,11 @@ impl BytecodeEngine {
 
                 Ty::Void
             }
+            /*
+            Expr::If(ei) => {
+
+            }
+            */
             Expr::Binary(eb) => match eb.op {
                 BinOp::Add(_a) => {
                     let lhs_type = self.convert_expr_to_bytecode(
@@ -363,28 +368,18 @@ impl BytecodeEngine {
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
         ctxt: &mut Context,
-    ) {
+    ) -> Ty {
         match stmt {
             Stmt::Semi(ref e, _) => {
                 self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
+                Ty::Void
             }
             Stmt::Expr(ref e) => {
                 // TODO: refactor the two styles of return?
-                let actual_return_type =
+                let expr_type =
                     self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
 
-                if actual_return_type == *expected_return_type {
-                    match actual_return_type {
-                        Ty::Void => bytecode.push(Bytecode::ReturnVoid),
-                        _ => bytecode.push(Bytecode::ReturnLastStackValue),
-                    }
-                } else {
-                    unimplemented!(
-                        "Mismatched return types: {:?} and {:?}",
-                        actual_return_type,
-                        expected_return_type
-                    );
-                }
+                expr_type
             }
             Stmt::Local(ref l) => {
                 match l.init {
@@ -408,6 +403,7 @@ impl BytecodeEngine {
 
                                 let var_id = ctxt.add_var(ident, ty);
                                 bytecode.push(Bytecode::VarDecl(var_id));
+                                Ty::Void
                             }
                             Some(ref _ty) => {
                                 unimplemented!("Can't understand explicit var decl type")
@@ -429,13 +425,21 @@ impl BytecodeEngine {
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
         ctxt: &Context,
-    ) {
+    ) -> Ty {
         //TODO: there may be more efficient ways to do this, but this will do for now
         let mut block_ctxt = ctxt.clone();
+        let mut return_ty = Ty::Void;
 
         for stmt in &block.stmts {
-            self.convert_stmt_to_bytecode(stmt, &expected_return_type, bytecode, &mut block_ctxt);
+            return_ty = self.convert_stmt_to_bytecode(
+                stmt,
+                &expected_return_type,
+                bytecode,
+                &mut block_ctxt,
+            );
         }
+
+        return_ty
     }
 
     fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> Fun {
@@ -473,7 +477,21 @@ impl BytecodeEngine {
                 }
             }
 
-            self.convert_block_to_bytecode(&item_fn.block, &return_ty, &mut bytecode, &ctxt);
+            let block_ty =
+                self.convert_block_to_bytecode(&item_fn.block, &return_ty, &mut bytecode, &ctxt);
+
+            match block_ty {
+                Ty::Void => bytecode.push(Bytecode::ReturnVoid),
+                _ => bytecode.push(Bytecode::ReturnLastStackValue),
+            }
+
+            if block_ty != return_ty {
+                unimplemented!(
+                    "Mismatched return types: {:?} and {:?}",
+                    block_ty,
+                    return_ty
+                );
+            }
 
             Fun {
                 params,
