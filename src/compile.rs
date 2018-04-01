@@ -120,6 +120,13 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 var_name_stack.push((next_id, Ty::U64));
                 next_id += 1;
             }
+            Bytecode::Lt => {
+                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
+                output += &format!("unsigned long long v{} = v{} < v{};\n", next_id, lhs, rhs);
+                var_name_stack.push((next_id, Ty::Bool));
+                next_id += 1;
+            }
             Bytecode::VarDecl(var_id) => {
                 let last_pos = var_name_stack.len() - 1;
                 var_lookup.insert(*var_id, last_pos);
@@ -220,7 +227,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
 pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
-    println!("{}", output);
+    //println!("{}", output);
 
     let path = {
         use std::fs::File;

@@ -59,6 +59,12 @@ fn eval_fn_bytecode(
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
+            Bytecode::Lt => match (value_stack.pop(), value_stack.pop()) {
+                (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
+                    value_stack.push(Value::Bool(lhs < rhs));
+                }
+                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+            },
             Bytecode::PushU64(val) => {
                 value_stack.push(Value::U64(*val));
             }

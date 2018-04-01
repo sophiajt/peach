@@ -13,6 +13,7 @@ pub enum Bytecode {
     Sub,
     Mul,
     Div,
+    Lt,
     VarDecl(VarId),
     Var(VarId),
     Assign(VarId),
@@ -332,6 +333,26 @@ impl BytecodeEngine {
                             lhs_type,
                             rhs_type
                         );
+                    }
+                }
+                BinOp::Lt(_a) => {
+                    let lhs_type = self.convert_expr_to_bytecode(
+                        &*eb.left,
+                        expected_return_type,
+                        bytecode,
+                        ctxt,
+                    );
+                    let rhs_type = self.convert_expr_to_bytecode(
+                        &*eb.right,
+                        expected_return_type,
+                        bytecode,
+                        ctxt,
+                    );
+                    if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                        bytecode.push(Bytecode::Lt);
+                        Ty::Bool
+                    } else {
+                        unimplemented!("Can't compare values of {:?} and {:?}", lhs_type, rhs_type);
                     }
                 }
                 _ => unimplemented!("Unknown operator: {:?}", eb.op),
