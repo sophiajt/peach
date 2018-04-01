@@ -29,6 +29,7 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
 
     //TODO: do we need the types here if we can just use 'auto' when we're not sure?
     let mut var_name_stack: Vec<(usize, Ty)> = vec![];
+    let mut block_stack: Vec<usize> = vec![];
 
     output += &codegen_type(&fun.return_ty);
     output += " ";
@@ -58,8 +59,17 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
         var_lookup.insert(param.var_id, var_name_stack.len() - 1);
     }
     let mut next_id = fun.params.len();
+    let mut idx = 0;
+    let bytecode_len = fun.bytecode.len();
+    while idx < bytecode_len {
+        let code = &fun.bytecode[idx];
 
-    for code in &fun.bytecode {
+        //if we're at the end of a block, go ahead and output the closing curly
+        while !block_stack.is_empty() && *block_stack.last().unwrap() == idx {
+            output += "}\n";
+            block_stack.pop();
+        }
+
         match code {
             Bytecode::ReturnVoid => {
                 output += "return;\n";
@@ -124,6 +134,14 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 var_name_stack.push((next_id, ty.clone()));
                 next_id += 1;
             }
+            Bytecode::If(offset) => {
+                // TODO: Probably should check the condition type for boolean
+                let (cond, _) = var_name_stack
+                    .pop()
+                    .expect("If needs a condition in codegen");
+                output += &format!("if (v{}) {{\n", cond);
+                block_stack.push(idx + offset);
+            }
             Bytecode::Assign(var_id) => {
                 let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
                 let id = var_lookup[var_id];
@@ -174,6 +192,8 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 );
             }
         }
+
+        idx += 1;
     }
 
     output += "};\n";
@@ -200,7 +220,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
 pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
-    //println!("{}", output);
+    println!("{}", output);
 
     let path = {
         use std::fs::File;

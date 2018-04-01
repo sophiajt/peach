@@ -23,7 +23,10 @@ fn eval_fn_bytecode(
         param_offset -= 1;
     }
 
-    for code in &fun.bytecode {
+    let bytecode_len = fun.bytecode.len();
+    let mut idx = 0;
+    while idx < bytecode_len {
+        let code = &fun.bytecode[idx];
         match code {
             Bytecode::ReturnVoid => {
                 return Value::Void;
@@ -62,6 +65,15 @@ fn eval_fn_bytecode(
             Bytecode::PushBool(val) => {
                 value_stack.push(Value::Bool(*val));
             }
+            Bytecode::If(offset) => match value_stack.pop() {
+                Some(Value::Bool(cond)) => {
+                    if !cond {
+                        idx += offset;
+                        continue;
+                    }
+                }
+                _ => unimplemented!("Expected boolean condition for if"),
+            },
             Bytecode::VarDecl(var_id) => {
                 var_lookup.insert(*var_id, value_stack.len() - 1);
             }
@@ -96,6 +108,8 @@ fn eval_fn_bytecode(
                 _ => unimplemented!("Internal error: debug printing missing value"),
             },
         }
+
+        idx += 1;
     }
 
     Value::Void

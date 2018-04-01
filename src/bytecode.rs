@@ -17,6 +17,7 @@ pub enum Bytecode {
     Var(VarId),
     Assign(VarId),
     Call(String),
+    If(usize), // usize here is the offset ahead to jump if the condition is not matched
     DebugPrint,
 }
 
@@ -214,11 +215,32 @@ impl BytecodeEngine {
 
                 Ty::Void
             }
-            /*
             Expr::If(ei) => {
+                let cond_type =
+                    self.convert_expr_to_bytecode(&*ei.cond, expected_return_type, bytecode, ctxt);
 
+                match cond_type {
+                    Ty::Bool => {}
+                    _ => unimplemented!("If condition needs to be boolean"),
+                }
+
+                bytecode.push(Bytecode::If(0));
+                let before_then_len = bytecode.len();
+
+                let then_ty = self.convert_block_to_bytecode(
+                    &ei.then_branch,
+                    expected_return_type,
+                    bytecode,
+                    ctxt,
+                );
+
+                let after_then_len = bytecode.len();
+
+                // Patch the original offset to the correct offset
+                bytecode[before_then_len - 1] = Bytecode::If(after_then_len - before_then_len + 1);
+
+                then_ty
             }
-            */
             Expr::Binary(eb) => match eb.op {
                 BinOp::Add(_a) => {
                     let lhs_type = self.convert_expr_to_bytecode(
