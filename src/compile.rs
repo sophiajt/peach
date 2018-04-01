@@ -12,7 +12,7 @@ fn codegen_type(ty: &Ty) -> String {
     codegen_ty
 }
 
-fn compile_fn_header(fn_name: &str, fun: &Fun) -> String {
+fn codegen_fn_header(fn_name: &str, fun: &Fun) -> String {
     let mut output = String::new();
     //TODO: tighten this up with a format!
     output += &codegen_type(&fun.return_ty);
@@ -23,7 +23,7 @@ fn compile_fn_header(fn_name: &str, fun: &Fun) -> String {
     output
 }
 
-fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
+fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
     let mut output = String::new();
 
@@ -180,7 +180,7 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     output
 }
 
-pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
+fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     let mut output = String::new();
 
     output += "#include <stdio.h>\n";
@@ -188,13 +188,18 @@ pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Re
 
     for fn_name in bc.processed_fns.keys() {
         let fun = bc.get_fn(fn_name);
-        output += &compile_fn_header(fn_name, fun);
+        output += &codegen_fn_header(fn_name, fun);
     }
     for fn_name in bc.processed_fns.keys() {
         let fun = bc.get_fn(fn_name);
-        output += &compile_fn(bc, fn_name, fun);
+        output += &codegen_fn(bc, fn_name, fun);
     }
 
+    output
+}
+
+pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
+    let output = codegen_c_from_bytecode(bc);
     //println!("{}", output);
 
     let path = {

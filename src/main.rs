@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Read;
 
 mod bytecode;
-mod codegen;
+mod compile;
 mod eval;
 mod tests;
 
@@ -36,7 +36,7 @@ fn main() {
 
         println!("Eval result:");
         eval::eval_engine(&bc, "main", &mut None);
-        let compile_result = codegen::compile_bytecode(&bc, &arg);
+        let compile_result = compile::compile_bytecode(&bc, &arg);
         println!("\nCompile result: {:?}", compile_result);
     }
 }

@@ -7,7 +7,7 @@ mod tests {
 
     //use super::*;
     use bytecode::BytecodeEngine;
-    use codegen;
+    use compile;
     use eval;
 
     fn load_to_bc(fname: &str) -> BytecodeEngine {
@@ -37,7 +37,7 @@ mod tests {
         assert_eq!(eval_expect, eval_output.unwrap().trim());
 
         // Compile stage
-        let compile_result = codegen::compile_bytecode(&bc, fname);
+        let compile_result = compile::compile_bytecode(&bc, fname);
         assert!(compile_result.is_ok());
 
         let cmd = Command::new(compile_result.unwrap())
