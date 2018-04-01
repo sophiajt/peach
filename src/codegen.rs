@@ -124,6 +124,14 @@ fn compile_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 var_name_stack.push((next_id, ty.clone()));
                 next_id += 1;
             }
+            Bytecode::Assign(var_id) => {
+                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
+                let id = var_lookup[var_id];
+                // TODO: we need a better way to output the type name
+                let (ref var, _) = var_name_stack[id];
+
+                output += &format!("v{} = v{};\n", var, rhs);
+            }
             Bytecode::Call(fn_name) => {
                 let fun = bc.get_fn(fn_name);
                 output += &format!(

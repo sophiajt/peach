@@ -15,6 +15,7 @@ pub enum Bytecode {
     Div,
     VarDecl(VarId),
     Var(VarId),
+    Assign(VarId),
     Call(String),
     DebugPrint,
 }
@@ -36,6 +37,48 @@ pub struct Param {
 impl Param {
     fn new(name: String, var_id: VarId, ty: Ty) -> Param {
         Param { name, var_id, ty }
+    }
+}
+
+//TODO: should VarDecl and Param be merged?
+struct VarDecl {
+    ident: String,
+    ty: Ty,
+}
+
+impl VarDecl {
+    fn new(ident: String, ty: Ty) -> VarDecl {
+        VarDecl { ident, ty }
+    }
+}
+
+struct Context {
+    scope: Vec<usize>,
+    vars: Vec<VarDecl>,
+}
+
+impl Context {
+    fn new() -> Context {
+        Context {
+            scope: vec![],
+            vars: vec![],
+        }
+    }
+
+    fn add_var(&mut self, ident: String, ty: Ty) -> usize {
+        self.vars.push(VarDecl::new(ident, ty));
+        let pos = self.vars.len() - 1;
+        self.scope.push(pos);
+        pos
+    }
+
+    fn find_var(&self, ident: &String) -> usize {
+        for var in &self.scope {
+            if ident == &self.vars[*var].ident {
+                return *var;
+            }
+        }
+        unimplemented!("Could not find variable: {}", ident);
     }
 }
 
@@ -146,6 +189,28 @@ impl BytecodeEngine {
             },
             Expr::Paren(ep) => {
                 self.convert_expr_to_bytecode(&*ep.expr, expected_return_type, bytecode, ctxt)
+            }
+            Expr::Assign(ea) => {
+                let rhs_type =
+                    self.convert_expr_to_bytecode(&*ea.right, expected_return_type, bytecode, ctxt);
+
+                match &*ea.left {
+                    Expr::Path(ep) => {
+                        let ident = ep.path.segments[0].ident.to_string();
+
+                        let var_id = ctxt.find_var(&ident);
+                        let var = &ctxt.vars[var_id];
+
+                        if rhs_type != var.ty {
+                            unimplemented!("Assignment between incompatible types");
+                        }
+
+                        bytecode.push(Bytecode::Assign(var_id));
+                    }
+                    _ => unimplemented!("Unsupported variable path for assignment"),
+                }
+
+                Ty::Void
             }
             Expr::Binary(eb) => match eb.op {
                 BinOp::Add(_a) => {
@@ -401,46 +466,5 @@ impl BytecodeEngine {
                 bytecode,
             }
         }
-    }
-}
-
-struct VarDecl {
-    ident: String,
-    ty: Ty,
-}
-
-impl VarDecl {
-    fn new(ident: String, ty: Ty) -> VarDecl {
-        VarDecl { ident, ty }
-    }
-}
-
-struct Context {
-    scope: Vec<usize>,
-    vars: Vec<VarDecl>,
-}
-
-impl Context {
-    fn new() -> Context {
-        Context {
-            scope: vec![],
-            vars: vec![],
-        }
-    }
-
-    fn add_var(&mut self, ident: String, ty: Ty) -> usize {
-        self.vars.push(VarDecl::new(ident, ty));
-        let pos = self.vars.len() - 1;
-        self.scope.push(pos);
-        pos
-    }
-
-    fn find_var(&self, ident: &String) -> usize {
-        for var in &self.scope {
-            if ident == &self.vars[*var].ident {
-                return *var;
-            }
-        }
-        unimplemented!("Could not find variable: {}", ident);
     }
 }

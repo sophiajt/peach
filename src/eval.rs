@@ -69,6 +69,16 @@ fn eval_fn_bytecode(
                 let pos: usize = var_lookup[var_id];
                 value_stack.push(value_stack[pos].clone());
             }
+            Bytecode::Assign(var_id) => {
+                match value_stack.pop() {
+                    Some(val) => {
+                        //TODO add type checking here
+                        let pos: usize = var_lookup[var_id];
+                        value_stack[pos] = val;
+                    }
+                    _ => unimplemented!("Assignment missing right-hand side value"),
+                }
+            }
             Bytecode::Call(fn_name) => {
                 let target_fun = bc.get_fn(fn_name);
                 let result = eval_fn_bytecode(bc, &target_fun, value_stack, debug_capture);

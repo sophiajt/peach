@@ -122,4 +122,9 @@ mod tests {
     fn test_fn03() {
         run_test("test_files/fn03.rs", "DEBUG: U64(2)", "DEBUG: 2");
     }
+
+    #[test]
+    fn test_var01() {
+        run_test("test_files/var01.rs", "DEBUG: U64(4)", "DEBUG: 4");
+    }
 }

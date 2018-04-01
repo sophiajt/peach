@@ -16,6 +16,7 @@ Some possible next steps:
   * (DONE) basic support
   * (DONE) params
   * TODO: Check types of each argument
+* TODO: mutability check
 * if
 * while
 * Add structs and member access
