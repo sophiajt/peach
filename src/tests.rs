@@ -54,10 +54,22 @@ mod tests {
     }
 
     #[test]
-    fn test_expr02() {
+    fn test_expr02_add() {
         run_test("test_files/expr02_add.rs", "DEBUG: U64(5)", "DEBUG: 5");
+    }
+
+    #[test]
+    fn test_expr02_sub() {
         run_test("test_files/expr02_sub.rs", "DEBUG: U64(4)", "DEBUG: 4");
+    }
+
+    #[test]
+    fn test_expr02_mul() {
         run_test("test_files/expr02_mul.rs", "DEBUG: U64(20)", "DEBUG: 20");
+    }
+
+    #[test]
+    fn test_expr02_div() {
         run_test("test_files/expr02_div.rs", "DEBUG: U64(3)", "DEBUG: 3");
     }
 
