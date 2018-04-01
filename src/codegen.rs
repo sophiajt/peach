@@ -220,11 +220,10 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let output_objname = String::new() + path.with_extension("obj").to_str().unwrap();
 
     let output = Command::new(r"cl.exe")
-            //.arg("/Ox")
-            .arg(&format!("/Fe{}", output_fname))
-            .arg(&format!("/Fo{}", output_objname))
-            .arg(path)
-            .output()?;
+        .arg(&format!("/Fe{}", output_fname))
+        .arg(&format!("/Fo{}", output_objname))
+        .arg(path)
+        .output()?;
     let end = PreciseTime::now();
     let duration = start
         .to(end)
@@ -256,15 +255,18 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
 }
 
 #[cfg(unix)]
-fn compile_file(path: ::std::path::PathBuf) -> ::std::process::ExitStatus {
+fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let start = PreciseTime::now();
     println!("path: {:?}", path);
     use std::process::Command;
+    let output_fname = String::new() + path.with_extension("").to_str().unwrap();
+
     let output = Command::new(r"clang")
-            //.arg("/Ox")
-            .arg(path)
-            .output()
-            .expect("failed to execute compiler");
+        .arg(path)
+        .arg("-o")
+        .arg(&output_fname)
+        .output()
+        .expect("failed to execute compiler");
     let end = PreciseTime::now();
     let duration = start
         .to(end)
@@ -281,10 +283,16 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::process::ExitStatus {
         duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
     );
 
-    if !output.status.success() {
-        println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-    }
+    if output.status.success() {
+        Ok(output_fname)
+    } else {
+        use std::io::{Error, ErrorKind};
 
-    output.status
+        let compile_stdout = String::from_utf8(output.stdout).unwrap();
+        let compile_stderr = String::from_utf8(output.stderr).unwrap();
+
+        let combined_compile_msg = compile_stdout + &compile_stderr;
+
+        Err(Error::new(ErrorKind::Other, combined_compile_msg))
+    }
 }
