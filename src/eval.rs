@@ -80,6 +80,7 @@ fn eval_fn_bytecode(
                 }
                 _ => unimplemented!("Expected boolean condition for if"),
             },
+            Bytecode::EndIf => {}
             Bytecode::VarDecl(var_id) => {
                 var_lookup.insert(*var_id, value_stack.len() - 1);
             }

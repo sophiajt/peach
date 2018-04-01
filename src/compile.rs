@@ -29,7 +29,6 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
 
     //TODO: do we need the types here if we can just use 'auto' when we're not sure?
     let mut var_name_stack: Vec<(usize, Ty)> = vec![];
-    let mut block_stack: Vec<usize> = vec![];
 
     output += &codegen_type(&fun.return_ty);
     output += " ";
@@ -63,12 +62,6 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     let bytecode_len = fun.bytecode.len();
     while idx < bytecode_len {
         let code = &fun.bytecode[idx];
-
-        //if we're at the end of a block, go ahead and output the closing curly
-        while !block_stack.is_empty() && *block_stack.last().unwrap() == idx {
-            output += "}\n";
-            block_stack.pop();
-        }
 
         match code {
             Bytecode::ReturnVoid => {
@@ -141,13 +134,15 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 var_name_stack.push((next_id, ty.clone()));
                 next_id += 1;
             }
-            Bytecode::If(offset) => {
+            Bytecode::If(_) => {
                 // TODO: Probably should check the condition type for boolean
                 let (cond, _) = var_name_stack
                     .pop()
                     .expect("If needs a condition in codegen");
                 output += &format!("if (v{}) {{\n", cond);
-                block_stack.push(idx + offset);
+            }
+            Bytecode::EndIf => {
+                output += "}\n";
             }
             Bytecode::Assign(var_id) => {
                 let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");

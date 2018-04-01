@@ -19,6 +19,7 @@ pub enum Bytecode {
     Assign(VarId),
     Call(String),
     If(usize), // usize here is the offset ahead to jump if the condition is not matched
+    EndIf,
     DebugPrint,
 }
 
@@ -235,6 +236,7 @@ impl BytecodeEngine {
                     ctxt,
                 );
 
+                bytecode.push(Bytecode::EndIf);
                 let after_then_len = bytecode.len();
 
                 // Patch the original offset to the correct offset
