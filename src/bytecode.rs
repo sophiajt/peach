@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use syn::{self, BinOp, Expr, FnArg, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
+use syn::{self, BinOp, Block, Expr, FnArg, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
 
 type VarId = usize;
 
@@ -41,6 +41,7 @@ impl Param {
 }
 
 //TODO: should VarDecl and Param be merged?
+#[derive(Clone)]
 struct VarDecl {
     ident: String,
     ty: Ty,
@@ -52,6 +53,7 @@ impl VarDecl {
     }
 }
 
+#[derive(Clone)]
 struct Context {
     scope: Vec<usize>,
     vars: Vec<VarDecl>,
@@ -421,6 +423,21 @@ impl BytecodeEngine {
         }
     }
 
+    fn convert_block_to_bytecode(
+        &mut self,
+        block: &Block,
+        expected_return_type: &Ty,
+        bytecode: &mut Vec<Bytecode>,
+        ctxt: &Context,
+    ) {
+        //TODO: there may be more efficient ways to do this, but this will do for now
+        let mut block_ctxt = ctxt.clone();
+
+        for stmt in &block.stmts {
+            self.convert_stmt_to_bytecode(stmt, &expected_return_type, bytecode, &mut block_ctxt);
+        }
+    }
+
     fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> Fun {
         if self.processed_fns.contains_key(fn_name) {
             let result = &self.processed_fns[fn_name];
@@ -456,9 +473,7 @@ impl BytecodeEngine {
                 }
             }
 
-            for stmt in &item_fn.block.stmts {
-                self.convert_stmt_to_bytecode(stmt, &return_ty, &mut bytecode, &mut ctxt);
-            }
+            self.convert_block_to_bytecode(&item_fn.block, &return_ty, &mut bytecode, &ctxt);
 
             Fun {
                 params,
