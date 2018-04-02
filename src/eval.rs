@@ -80,6 +80,11 @@ fn eval_fn_bytecode(
                 }
                 _ => unimplemented!("Expected boolean condition for if"),
             },
+            Bytecode::Skip(offset) => {
+                idx += offset;
+                continue;
+            }
+            Bytecode::Else => {}
             Bytecode::EndIf => {}
             Bytecode::BeginWhile => {}
             Bytecode::WhileCond(offset) => match value_stack.pop() {

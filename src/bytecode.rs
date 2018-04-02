@@ -20,6 +20,8 @@ pub enum Bytecode {
     Assign(VarId),
     Call(String),
     If(Offset), // Offset is number of bytecodes to jump forward if false
+    Else,
+    Skip(Offset), // Offset is number of bytecodes to skip (aka jump forward)
     EndIf,
     BeginWhile,
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
@@ -231,7 +233,7 @@ impl BytecodeEngine {
                 }
 
                 bytecode.push(Bytecode::If(0));
-                let before_block_len = bytecode.len();
+                let before_then_block_len = bytecode.len();
 
                 let then_ty = self.convert_block_to_bytecode(
                     &ei.then_branch,
@@ -239,13 +241,34 @@ impl BytecodeEngine {
                     bytecode,
                     ctxt,
                 );
+                let after_then_block_len = bytecode.len();
 
-                let after_block_len = bytecode.len();
+                if let Some(ref else_branch) = ei.else_branch {
+                    bytecode.push(Bytecode::Skip(0));
+                    bytecode.push(Bytecode::Else);
+                    match *else_branch.1 {
+                        Expr::Block(ref eb) => {
+                            let else_ty = self.convert_block_to_bytecode(
+                                &eb.block,
+                                expected_return_type,
+                                bytecode,
+                                ctxt,
+                            );
+
+                            if then_ty != else_ty {
+                                unimplemented!("If then/else blocks have mismatching types");
+                            }
+                            bytecode[after_then_block_len] =
+                                Bytecode::Skip(bytecode.len() - after_then_block_len);
+                        }
+                        _ => unimplemented!("Unsupported else block"),
+                    }
+                }
                 bytecode.push(Bytecode::EndIf);
 
                 // Patch the original offset to the correct offset
-                bytecode[before_block_len - 1] =
-                    Bytecode::If(after_block_len - before_block_len + 1);
+                bytecode[before_then_block_len - 1] =
+                    Bytecode::If(after_then_block_len - before_then_block_len + 2);
 
                 then_ty
             }
