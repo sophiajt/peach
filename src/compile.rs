@@ -30,6 +30,11 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     //let mut expression_stack: Vec<(String, Ty)> = vec![];
     let mut expression_stack: Vec<String> = vec![];
 
+    let mut next_temp_id = 0;
+
+    //TODO: This isn't the best solution, but it's an experiment
+    let mut temp_id_stack = vec![];
+
     output += &codegen_type(&fun.return_ty);
     output += " ";
     output += fn_name;
@@ -135,16 +140,35 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 expr_string += ")";
                 expression_stack.push(expr_string);
             }
-            Bytecode::If(_) => {
+            Bytecode::If(_, ty) => {
                 //TODO: fix to expression-friendly for C
                 let cond = expression_stack.pop().unwrap();
 
+                match ty {
+                    Ty::U64 | Ty::Bool => {
+                        output += &format!("{} t{};\n", codegen_type(ty), next_temp_id);
+                        temp_id_stack.push(next_temp_id);
+                        next_temp_id += 1;
+                    }
+                    _ => {}
+                }
+
                 output += &format!("if ({}) {{\n", cond);
             }
-            Bytecode::Else(_) => {
+            Bytecode::Else(_, ty) => {
+                if *ty != Ty::Void {
+                    let result = expression_stack.pop().unwrap();
+                    output += &format!("t{} = {};\n", temp_id_stack.last().unwrap(), result);
+                }
                 output += "} else {\n";
             }
-            Bytecode::EndIf => {
+            Bytecode::EndIf(ty) => {
+                if *ty != Ty::Void {
+                    let result = expression_stack.pop().unwrap();
+                    let temp_id = temp_id_stack.pop().unwrap();
+                    output += &format!("t{} = {};\n", temp_id, result);
+                    expression_stack.push(format!("t{}", temp_id));
+                }
                 output += "}\n";
             }
             Bytecode::BeginWhile => {

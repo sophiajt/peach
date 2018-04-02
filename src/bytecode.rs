@@ -19,9 +19,9 @@ pub enum Bytecode {
     Var(VarId),
     Assign(VarId),
     Call(String),
-    If(Offset),   // Offset is number of bytecodes to jump forward if false
-    Else(Offset), // Offset is number of bytecodes to skip (aka jump forward)
-    EndIf,
+    If(Offset, Ty), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
+    Else(Offset, Ty), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
+    EndIf(Ty),        //includes the type of the result, if this is an expression
     BeginWhile,
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
     EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
@@ -231,7 +231,7 @@ impl BytecodeEngine {
                     _ => unimplemented!("If condition needs to be boolean"),
                 }
 
-                bytecode.push(Bytecode::If(0));
+                bytecode.push(Bytecode::If(0, Ty::Void));
                 let before_then_block_len = bytecode.len();
 
                 let then_ty = self.convert_block_to_bytecode(
@@ -243,7 +243,7 @@ impl BytecodeEngine {
                 let after_then_block_len = bytecode.len();
 
                 if let Some(ref else_branch) = ei.else_branch {
-                    bytecode.push(Bytecode::Else(0));
+                    bytecode.push(Bytecode::Else(0, Ty::Void));
                     match *else_branch.1 {
                         Expr::Block(ref eb) => {
                             let else_ty = self.convert_block_to_bytecode(
@@ -256,17 +256,21 @@ impl BytecodeEngine {
                             if then_ty != else_ty {
                                 unimplemented!("If then/else blocks have mismatching types");
                             }
-                            bytecode[after_then_block_len] =
-                                Bytecode::Else(bytecode.len() - after_then_block_len);
+                            bytecode[after_then_block_len] = Bytecode::Else(
+                                bytecode.len() - after_then_block_len,
+                                else_ty.clone(),
+                            );
                         }
                         _ => unimplemented!("Unsupported else block"),
                     }
                 }
-                bytecode.push(Bytecode::EndIf);
+                bytecode.push(Bytecode::EndIf(then_ty.clone()));
 
                 // Patch the original offset to the correct offset
-                bytecode[before_then_block_len - 1] =
-                    Bytecode::If(after_then_block_len - before_then_block_len + 2);
+                bytecode[before_then_block_len - 1] = Bytecode::If(
+                    after_then_block_len - before_then_block_len + 2,
+                    then_ty.clone(),
+                );
 
                 then_ty
             }

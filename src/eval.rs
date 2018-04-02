@@ -71,7 +71,7 @@ fn eval_fn_bytecode(
             Bytecode::PushBool(val) => {
                 value_stack.push(Value::Bool(*val));
             }
-            Bytecode::If(offset) => match value_stack.pop() {
+            Bytecode::If(offset, _) => match value_stack.pop() {
                 Some(Value::Bool(cond)) => {
                     if !cond {
                         idx += offset;
@@ -80,11 +80,11 @@ fn eval_fn_bytecode(
                 }
                 _ => unimplemented!("Expected boolean condition for if"),
             },
-            Bytecode::Else(offset) => {
+            Bytecode::Else(offset, _) => {
                 idx += offset;
                 continue;
             }
-            Bytecode::EndIf => {}
+            Bytecode::EndIf(_) => {}
             Bytecode::BeginWhile => {}
             Bytecode::WhileCond(offset) => match value_stack.pop() {
                 Some(Value::Bool(cond)) => {

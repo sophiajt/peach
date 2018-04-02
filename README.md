@@ -19,7 +19,7 @@ Some possible next steps:
 * (DONE) if
 * (DONE) while
 * (DONE) Playing with the while codegen, I'm noticing we could codegen a bit smarter.  Expressions could come out with paren'd strings inside of other expressions.  Assignments and the like would cap off the codegen.
-* TODO: if and while assume they are standalone, but they're expressions in Rust. C codegen needs to be able to handle this
+* (DONE) if expressions
 * TODO: mutability check
 * TODO: consistent naming
 * Add structs and member access

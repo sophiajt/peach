@@ -154,6 +154,16 @@ mod tests {
     }
 
     #[test]
+    fn test_if05() {
+        run_test("test_files/if05.rs", "DEBUG: U64(5)", "DEBUG: 5");
+    }
+
+    #[test]
+    fn test_if06() {
+        run_test("test_files/if06.rs", "DEBUG: U64(6)", "DEBUG: 6");
+    }
+
+    #[test]
     fn test_while01() {
         run_test("test_files/while01.rs", "DEBUG: U64(10)", "DEBUG: 10");
     }
