@@ -19,9 +19,8 @@ pub enum Bytecode {
     Var(VarId),
     Assign(VarId),
     Call(String),
-    If(Offset), // Offset is number of bytecodes to jump forward if false
-    Else,
-    Skip(Offset), // Offset is number of bytecodes to skip (aka jump forward)
+    If(Offset),   // Offset is number of bytecodes to jump forward if false
+    Else(Offset), // Offset is number of bytecodes to skip (aka jump forward)
     EndIf,
     BeginWhile,
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
@@ -244,8 +243,7 @@ impl BytecodeEngine {
                 let after_then_block_len = bytecode.len();
 
                 if let Some(ref else_branch) = ei.else_branch {
-                    bytecode.push(Bytecode::Skip(0));
-                    bytecode.push(Bytecode::Else);
+                    bytecode.push(Bytecode::Else(0));
                     match *else_branch.1 {
                         Expr::Block(ref eb) => {
                             let else_ty = self.convert_block_to_bytecode(
@@ -259,7 +257,7 @@ impl BytecodeEngine {
                                 unimplemented!("If then/else blocks have mismatching types");
                             }
                             bytecode[after_then_block_len] =
-                                Bytecode::Skip(bytecode.len() - after_then_block_len);
+                                Bytecode::Else(bytecode.len() - after_then_block_len);
                         }
                         _ => unimplemented!("Unsupported else block"),
                     }

@@ -141,10 +141,7 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
 
                 output += &format!("if ({}) {{\n", cond);
             }
-            Bytecode::Skip(_) => {
-                //Note: We currently ignore the skip command doing C codegen as so far it's only been used for if/else
-            }
-            Bytecode::Else => {
+            Bytecode::Else(_) => {
                 output += "} else {\n";
             }
             Bytecode::EndIf => {
@@ -191,7 +188,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
 pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
-    //println!("{}", output);
+    println!("{}", output);
 
     let path = {
         use std::fs::File;
