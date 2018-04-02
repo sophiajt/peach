@@ -1,5 +1,5 @@
 use bytecode::{Bytecode, BytecodeEngine, Fun, Ty};
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use time::PreciseTime;
 
 fn codegen_type(ty: &Ty) -> String {
@@ -24,11 +24,11 @@ fn codegen_fn_header(fn_name: &str, fun: &Fun) -> String {
 }
 
 fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
-    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
     let mut output = String::new();
 
-    //TODO: do we need the types here if we can just use 'auto' when we're not sure?
-    let mut var_name_stack: Vec<(usize, Ty)> = vec![];
+    //TODO: we may want to add types in the future
+    //let mut expression_stack: Vec<(String, Ty)> = vec![];
+    let mut expression_stack: Vec<String> = vec![];
 
     output += &codegen_type(&fun.return_ty);
     output += " ";
@@ -47,6 +47,7 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     }
 
     output += ") {\n";
+
     for param in &fun.params {
         output += &format!(
             "{} v{} = {};\n",
@@ -54,161 +55,110 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
             param.var_id,
             param.name
         );
-        var_name_stack.push((param.var_id, param.ty.clone()));
-        var_lookup.insert(param.var_id, var_name_stack.len() - 1);
     }
-    let mut next_id = fun.params.len();
-    let mut idx = 0;
-    let bytecode_len = fun.bytecode.len();
-    while idx < bytecode_len {
-        let code = &fun.bytecode[idx];
 
+    for code in &fun.bytecode {
         match code {
             Bytecode::ReturnVoid => {
                 output += "return;\n";
                 break;
             }
             Bytecode::ReturnLastStackValue => {
-                let (retval, _) = var_name_stack
-                    .pop()
-                    .expect("Add needs a value to return in codegen");
-                output += &format!("return v{};\n", retval);
+                let retval = expression_stack.pop().unwrap();
+                output += &format!("return {};\n", retval);
                 break;
             }
             Bytecode::PushU64(val) => {
-                output += &format!("unsigned long long v{} = {};\n", next_id, val);
-                var_name_stack.push((next_id, Ty::U64));
-                next_id += 1;
+                expression_stack.push(val.to_string());
             }
             Bytecode::PushBool(val) => {
-                output += &format!("bool v{} = {};\n", next_id, val);
-                var_name_stack.push((next_id, Ty::Bool));
-                next_id += 1;
+                expression_stack.push(val.to_string());
             }
             Bytecode::Add => {
-                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
-                output += &format!("unsigned long long v{} = v{}+v{};\n", next_id, lhs, rhs);
-                var_name_stack.push((next_id, Ty::U64));
-                next_id += 1;
+                let rhs = expression_stack.pop().unwrap();
+                let lhs = expression_stack.pop().unwrap();
+
+                expression_stack.push(format!("({}+{})", lhs, rhs));
             }
             Bytecode::Sub => {
-                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
-                output += &format!("unsigned long long v{} = v{}-v{};\n", next_id, lhs, rhs);
-                var_name_stack.push((next_id, Ty::U64));
-                next_id += 1;
+                let rhs = expression_stack.pop().unwrap();
+                let lhs = expression_stack.pop().unwrap();
+
+                expression_stack.push(format!("({}-{})", lhs, rhs));
             }
             Bytecode::Mul => {
-                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
-                output += &format!("unsigned long long v{} = v{}*v{};\n", next_id, lhs, rhs);
-                var_name_stack.push((next_id, Ty::U64));
-                next_id += 1;
+                let rhs = expression_stack.pop().unwrap();
+                let lhs = expression_stack.pop().unwrap();
+
+                expression_stack.push(format!("({}*{})", lhs, rhs));
             }
             Bytecode::Div => {
-                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
-                output += &format!("unsigned long long v{} = v{}/v{};\n", next_id, lhs, rhs);
-                var_name_stack.push((next_id, Ty::U64));
-                next_id += 1;
+                let rhs = expression_stack.pop().unwrap();
+                let lhs = expression_stack.pop().unwrap();
+
+                expression_stack.push(format!("({}/{})", lhs, rhs));
             }
             Bytecode::Lt => {
-                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let (lhs, _) = var_name_stack.pop().expect("Add needs a lhs in codegen");
-                output += &format!("unsigned long long v{} = v{} < v{};\n", next_id, lhs, rhs);
-                var_name_stack.push((next_id, Ty::Bool));
-                next_id += 1;
+                let rhs = expression_stack.pop().unwrap();
+                let lhs = expression_stack.pop().unwrap();
+
+                expression_stack.push(format!("({} < {})", lhs, rhs));
             }
             Bytecode::VarDecl(var_id) => {
-                let last_pos = var_name_stack.len() - 1;
-                var_lookup.insert(*var_id, last_pos);
+                let rhs = expression_stack.pop().unwrap();
+
+                output += &format!("auto v{} = {};\n", *var_id, rhs);
             }
             Bytecode::Var(var_id) => {
-                let id = var_lookup[var_id];
-                // TODO: we need a better way to output the type name
-                let (ref var, ref ty) = var_name_stack[id];
+                expression_stack.push(format!("v{}", var_id));
+            }
+            Bytecode::Assign(var_id) => {
+                let rhs = expression_stack.pop().unwrap();
 
-                output += &format!("{} v{} = v{};\n", codegen_type(ty), next_id, var);
+                output += &format!("v{} = {};\n", *var_id, rhs);
+            }
+            Bytecode::Call(fn_name) => {
+                let fun = bc.get_fn(fn_name);
+                let mut expr_string = String::new();
 
-                var_name_stack.push((next_id, ty.clone()));
-                next_id += 1;
+                expr_string += &format!("{}(", fn_name);
+                let expression_stack_len = expression_stack.len();
+                let mut offset = fun.params.len();
+                while offset > 0 {
+                    expr_string += &expression_stack[expression_stack_len - offset];
+                    if offset > 1 {
+                        expr_string += ", "
+                    }
+                    offset -= 1;
+                }
+
+                expr_string += ")";
+                expression_stack.push(expr_string);
             }
             Bytecode::If(_) => {
-                // TODO: Probably should check the condition type for boolean
-                let (cond, _) = var_name_stack
-                    .pop()
-                    .expect("If needs a condition in codegen");
-                output += &format!("if (v{}) {{\n", cond);
+                //TODO: fix to expression-friendly for C
+                let cond = expression_stack.pop().unwrap();
+
+                output += &format!("if ({}) {{\n", cond);
             }
             Bytecode::EndIf => {
                 output += "}\n";
             }
             Bytecode::BeginWhile => {
-                output += &format!("while(1) {{\n");
+                output += "while(1) {\n";
             }
             Bytecode::WhileCond(_) => {
-                // TODO: Probably should check the condition type for boolean
-                let (cond, _) = var_name_stack
-                    .pop()
-                    .expect("While needs a condition in codegen");
-                output += &format!("if (!v{}) {{ break; }}\n", cond);
+                let cond = expression_stack.pop().unwrap();
+                output += &format!("if (!({})) break;\n", cond);
             }
             Bytecode::EndWhile(_) => {
                 output += "}\n";
             }
-            Bytecode::Assign(var_id) => {
-                let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
-                let id = var_lookup[var_id];
-                // TODO: we need a better way to output the type name
-                let (ref var, _) = var_name_stack[id];
-
-                output += &format!("v{} = v{};\n", var, rhs);
-            }
-            Bytecode::Call(fn_name) => {
-                let fun = bc.get_fn(fn_name);
-                output += &format!(
-                    "{} v{} = {}(",
-                    codegen_type(&fun.return_ty),
-                    next_id,
-                    fn_name
-                );
-
-                let mut offset = fun.params.len();
-                let var_name_stack_len = var_name_stack.len();
-                while offset > 0 {
-                    output += &format!("v{}", var_name_stack[var_name_stack_len - offset].0);
-                    if offset > 1 {
-                        output += ", "
-                    }
-                    offset -= 1;
-                }
-
-                output += ");\n";
-                var_name_stack.push((next_id, fun.return_ty.clone()));
-                next_id += 1;
-            }
             Bytecode::DebugPrint => {
-                let (debug_id, debug_ty) = var_name_stack
-                    .pop()
-                    .expect("Add needs a value to debug print in codegen");
-
-                output += &format!(
-                    "printf(\"DEBUG: {}\\n\", v{});\n",
-                    match debug_ty {
-                        Ty::Bool => "%s",
-                        Ty::U64 => "%llu",
-                        _ => unimplemented!("Can't debug print values of type {:?}", debug_ty),
-                    },
-                    match debug_ty {
-                        Ty::Bool => format!("{}?\"true\":\"false\"", debug_id),
-                        _ => format!("{}", debug_id),
-                    }
-                );
+                let val = expression_stack.pop().unwrap();
+                output += &format!("printf(\"DEBUG: %u\\n\", ({}));\n", val);
             }
         }
-
-        idx += 1;
     }
 
     output += "};\n";
@@ -235,7 +185,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
 pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
-    //println!("{}", output);
+    println!("{}", output);
 
     let path = {
         use std::fs::File;

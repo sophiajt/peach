@@ -16,9 +16,12 @@ Some possible next steps:
   * (DONE) basic support
   * (DONE) params
   * TODO: Check types of each argument
+* (DONE) if
+* (DONE) while
+* Playing with the while codegen, I'm noticing we could codegen a bit smarter.  Expressions could come out with paren'd strings
+  inside of other expressions.  Assignments and the like would cap off the codegen.
 * TODO: mutability check
-* if
-* while
+* TODO: consistent naming
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)
 

@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_expr07() {
-        run_test("test_files/expr07.rs", "DEBUG: Bool(true)", "DEBUG: true");
+        run_test("test_files/expr07.rs", "DEBUG: Bool(true)", "DEBUG: 1");
     }
 
     #[test]
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_expr10() {
-        run_test("test_files/expr10.rs", "DEBUG: Bool(false)", "DEBUG: false");
+        run_test("test_files/expr10.rs", "DEBUG: Bool(false)", "DEBUG: 0");
     }
 
     #[test]
