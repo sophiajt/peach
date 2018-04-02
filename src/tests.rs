@@ -137,6 +137,11 @@ mod tests {
     }
 
     #[test]
+    fn test_var02() {
+        run_test("test_files/var02.rs", "DEBUG: U64(3)", "DEBUG: 3");
+    }
+
+    #[test]
     fn test_infer01() {
         run_test("test_files/infer01.rs", "DEBUG: U64(3)", "DEBUG: 3");
     }

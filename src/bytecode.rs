@@ -488,59 +488,60 @@ impl BytecodeEngine {
             Stmt::Expr(ref e) => {
                 self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt)
             }
-            Stmt::Local(ref l) => match l.init {
-                Some(ref foo) => {
-                    let rhs_ty = self.convert_expr_to_bytecode(
-                        &*foo.1,
-                        expected_return_type,
-                        bytecode,
-                        ctxt,
-                    );
+            Stmt::Local(ref l) => {
+                let ident = match *l.pat {
+                    Pat::Ident(ref pi) => pi.ident.to_string(),
+                    _ => unimplemented!("Unsupported pattern in variable declaration"),
+                };
+                match l.init {
+                    Some(ref foo) => {
+                        let rhs_ty = self.convert_expr_to_bytecode(
+                            &*foo.1,
+                            expected_return_type,
+                            bytecode,
+                            ctxt,
+                        );
 
-                    match l.ty {
-                        None => {
-                            let ident = match *l.pat {
-                                Pat::Ident(ref pi) => pi.ident.to_string(),
-                                _ => unimplemented!("Unsupport pattern in variable declaration"),
-                            };
+                        match l.ty {
+                            None => {
+                                let var_id = ctxt.add_var(ident, rhs_ty);
+                                bytecode.push(Bytecode::VarDecl(var_id));
+                                Ty::Void
+                            }
+                            Some(ref explicit_ty) => {
+                                let var_ty = self.resolve_type(&*explicit_ty.1);
 
-                            let var_id = ctxt.add_var(ident, rhs_ty);
-                            bytecode.push(Bytecode::VarDecl(var_id));
-                            Ty::Void
-                        }
-                        Some(ref explicit_ty) => {
-                            let var_ty = self.resolve_type(&*explicit_ty.1);
-
-                            let ident = match *l.pat {
-                                Pat::Ident(ref pi) => pi.ident.to_string(),
-                                _ => unimplemented!("Unsupport pattern in variable declaration"),
-                            };
-
-                            if var_ty != rhs_ty {
-                                unimplemented!(
+                                if var_ty != rhs_ty {
+                                    unimplemented!(
                                         "Explicit variable type '{:?}' does not match expression type '{:?}'", var_ty, rhs_ty
                                     )
+                                }
+
+                                let var_id = ctxt.add_var(ident, var_ty);
+                                bytecode.push(Bytecode::VarDecl(var_id));
+
+                                Ty::Void
                             }
-
-                            let var_id = ctxt.add_var(ident, var_ty);
-                            bytecode.push(Bytecode::VarDecl(var_id));
-
-                            Ty::Void
                         }
                     }
-                }
-                None => {
-                    let ident = match *l.pat {
-                        Pat::Ident(ref pi) => pi.ident.to_string(),
-                        _ => unimplemented!("Unsupport pattern in variable declaration"),
-                    };
+                    None => {
+                        match l.ty {
+                            None => {
+                                let var_id = ctxt.add_var(ident, Ty::Unknown);
+                                bytecode.push(Bytecode::VarDeclUninit(var_id));
+                            }
+                            Some(ref explicit_ty) => {
+                                let var_ty = self.resolve_type(&*explicit_ty.1);
 
-                    let var_id = ctxt.add_var(ident, Ty::Unknown);
-                    bytecode.push(Bytecode::VarDeclUninit(var_id));
+                                let var_id = ctxt.add_var(ident, var_ty);
+                                bytecode.push(Bytecode::VarDeclUninit(var_id));
+                            }
+                        }
 
-                    Ty::Void
+                        Ty::Void
+                    }
                 }
-            },
+            }
             Stmt::Item(ref i) => match i {
                 _ => unimplemented!("Unknown item type: {:?}", i),
             },
