@@ -24,11 +24,10 @@ fn main() {
         let mut src = String::new();
         file.read_to_string(&mut src).expect("Unable to read file");
 
-        let syntax_file = syn::parse_file(&src).expect("Unable to parse file");
         let mut bc = BytecodeEngine::new();
 
         // Step 1: Load up the parsed file so that we can lazily convert it
-        bc.load_file(syntax_file);
+        bc.load_file(&src);
 
         // Step 2: Convert to bytecode from the given location
         bc.process("main");

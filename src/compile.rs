@@ -1,5 +1,4 @@
 use bytecode::{Bytecode, BytecodeEngine, Fun, Ty};
-//use std::collections::HashMap;
 use time::PreciseTime;
 
 fn codegen_type(ty: &Ty) -> String {

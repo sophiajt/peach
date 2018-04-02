@@ -122,7 +122,9 @@ impl BytecodeEngine {
         &self.processed_fns[fn_name]
     }
 
-    pub fn load_file(&mut self, syntax_file: syn::File) {
+    pub fn load_file(&mut self, src: &String) {
+        let syntax_file = syn::parse_file(&src).expect("Unable to parse file");
+
         for item in syntax_file.items {
             match item {
                 Item::Fn(item_fn) => {
