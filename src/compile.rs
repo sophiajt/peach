@@ -12,14 +12,7 @@ fn codegen_type(ty: &Ty) -> String {
 }
 
 fn codegen_fn_header(fn_name: &str, fun: &Fun) -> String {
-    let mut output = String::new();
-    //TODO: tighten this up with a format!
-    output += &codegen_type(&fun.return_ty);
-    output += " ";
-    output += fn_name;
-    output += "();\n";
-
-    output
+    format!("{} {}();", codegen_type(&fun.return_ty), fn_name)
 }
 
 fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
@@ -140,7 +133,6 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 expression_stack.push(expr_string);
             }
             Bytecode::If(_, ty) => {
-                //TODO: fix to expression-friendly for C
                 let cond = expression_stack.pop().unwrap();
 
                 match ty {
@@ -211,7 +203,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
 pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
-    println!("{}", output);
+    //println!("{}", output);
 
     let path = {
         use std::fs::File;

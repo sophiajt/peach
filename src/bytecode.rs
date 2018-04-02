@@ -479,44 +479,51 @@ impl BytecodeEngine {
                 Ty::Void
             }
             Stmt::Expr(ref e) => {
-                // TODO: refactor the two styles of return?
-                let expr_type =
-                    self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
-
-                expr_type
+                self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt)
             }
-            Stmt::Local(ref l) => {
-                match l.init {
-                    Some(ref foo) => {
-                        let ty = self.convert_expr_to_bytecode(
-                            &*foo.1,
-                            expected_return_type,
-                            bytecode,
-                            ctxt,
-                        );
+            Stmt::Local(ref l) => match l.init {
+                Some(ref foo) => {
+                    let rhs_ty = self.convert_expr_to_bytecode(
+                        &*foo.1,
+                        expected_return_type,
+                        bytecode,
+                        ctxt,
+                    );
 
-                        //TODO check this type against the given type
-                        match l.ty {
-                            None => {
-                                let ident = match *l.pat {
-                                    Pat::Ident(ref pi) => pi.ident.to_string(),
-                                    _ => {
-                                        unimplemented!("Unsupport pattern in variable declaration")
-                                    }
-                                };
+                    match l.ty {
+                        None => {
+                            let ident = match *l.pat {
+                                Pat::Ident(ref pi) => pi.ident.to_string(),
+                                _ => unimplemented!("Unsupport pattern in variable declaration"),
+                            };
 
-                                let var_id = ctxt.add_var(ident, ty);
-                                bytecode.push(Bytecode::VarDecl(var_id));
-                                Ty::Void
+                            let var_id = ctxt.add_var(ident, rhs_ty);
+                            bytecode.push(Bytecode::VarDecl(var_id));
+                            Ty::Void
+                        }
+                        Some(ref explicit_ty) => {
+                            let var_ty = self.resolve_type(&*explicit_ty.1);
+
+                            let ident = match *l.pat {
+                                Pat::Ident(ref pi) => pi.ident.to_string(),
+                                _ => unimplemented!("Unsupport pattern in variable declaration"),
+                            };
+
+                            if var_ty != rhs_ty {
+                                unimplemented!(
+                                        "Explicit variable type '{:?}' does not match expression type '{:?}'", var_ty, rhs_ty
+                                    )
                             }
-                            Some(ref _ty) => {
-                                unimplemented!("Can't understand explicit var decl type")
-                            }
+
+                            let var_id = ctxt.add_var(ident, var_ty);
+                            bytecode.push(Bytecode::VarDecl(var_id));
+
+                            Ty::Void
                         }
                     }
-                    None => unimplemented!("Can't yet handle inferred types or uninit variables"),
                 }
-            }
+                None => unimplemented!("Can't yet handle inferred types or uninit variables"),
+            },
             Stmt::Item(ref i) => match i {
                 _ => unimplemented!("Unknown item type: {:?}", i),
             },
@@ -551,7 +558,7 @@ impl BytecodeEngine {
             let result = &self.processed_fns[fn_name];
             result.clone()
         } else {
-            let item_fn = self.lazy_fns[fn_name].clone();
+            let item_fn = self.lazy_fns.remove(fn_name).unwrap();
 
             let mut bytecode = Vec::new();
 

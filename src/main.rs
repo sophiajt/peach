@@ -31,7 +31,7 @@ fn main() {
 
         // Step 2: Convert to bytecode from the given location
         bc.process("main");
-        println!("{:#?}", bc.processed_fns);
+        //println!("{:#?}", bc.processed_fns);
 
         println!("Eval result:");
         eval::eval_engine(&bc, "main", &mut None);
