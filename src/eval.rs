@@ -102,6 +102,11 @@ fn eval_fn_bytecode(
             Bytecode::VarDecl(var_id) => {
                 var_lookup.insert(*var_id, value_stack.len() - 1);
             }
+            Bytecode::VarDeclUninit(var_id) => {
+                //push a dummy value on the stack to give us a slot for a value later
+                value_stack.push(Value::Void);
+                var_lookup.insert(*var_id, value_stack.len() - 1);
+            }
             Bytecode::Var(var_id) => {
                 let pos: usize = var_lookup[var_id];
                 value_stack.push(value_stack[pos].clone());

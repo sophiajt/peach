@@ -16,6 +16,7 @@ pub enum Bytecode {
     Div,
     Lt,
     VarDecl(VarId),
+    VarDeclUninit(VarId),
     Var(VarId),
     Assign(VarId),
     Call(String),
@@ -34,6 +35,7 @@ pub enum Ty {
     Bool,
     Error,
     Void,
+    Unknown,
 }
 
 #[derive(Debug, Clone)]
@@ -49,10 +51,10 @@ impl Param {
 }
 
 //TODO: should VarDecl and Param be merged?
-#[derive(Clone)]
-struct VarDecl {
-    ident: String,
-    ty: Ty,
+#[derive(Clone, Debug)]
+pub struct VarDecl {
+    pub ident: String,
+    pub ty: Ty,
 }
 
 impl VarDecl {
@@ -96,6 +98,7 @@ impl Context {
 pub struct Fun {
     pub params: Vec<Param>,
     pub return_ty: Ty,
+    pub vars: Vec<VarDecl>,
     pub bytecode: Vec<Bytecode>,
 }
 
@@ -211,7 +214,11 @@ impl BytecodeEngine {
                         let ident = ep.path.segments[0].ident.to_string();
 
                         let var_id = ctxt.find_var(&ident);
-                        let var = &ctxt.vars[var_id];
+                        let var = &mut ctxt.vars[var_id];
+
+                        if var.ty == Ty::Unknown {
+                            var.ty = rhs_type.clone();
+                        }
 
                         if rhs_type != var.ty {
                             unimplemented!("Assignment between incompatible types");
@@ -522,7 +529,17 @@ impl BytecodeEngine {
                         }
                     }
                 }
-                None => unimplemented!("Can't yet handle inferred types or uninit variables"),
+                None => {
+                    let ident = match *l.pat {
+                        Pat::Ident(ref pi) => pi.ident.to_string(),
+                        _ => unimplemented!("Unsupport pattern in variable declaration"),
+                    };
+
+                    let var_id = ctxt.add_var(ident, Ty::Unknown);
+                    bytecode.push(Bytecode::VarDeclUninit(var_id));
+
+                    Ty::Void
+                }
             },
             Stmt::Item(ref i) => match i {
                 _ => unimplemented!("Unknown item type: {:?}", i),
@@ -535,7 +552,7 @@ impl BytecodeEngine {
         block: &Block,
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
-        ctxt: &Context,
+        ctxt: &mut Context,
     ) -> Ty {
         //TODO: there may be more efficient ways to do this, but this will do for now
         let mut block_ctxt = ctxt.clone();
@@ -549,6 +566,8 @@ impl BytecodeEngine {
                 &mut block_ctxt,
             );
         }
+
+        ctxt.vars = block_ctxt.vars;
 
         return_ty
     }
@@ -588,8 +607,12 @@ impl BytecodeEngine {
                 }
             }
 
-            let block_ty =
-                self.convert_block_to_bytecode(&item_fn.block, &return_ty, &mut bytecode, &ctxt);
+            let block_ty = self.convert_block_to_bytecode(
+                &item_fn.block,
+                &return_ty,
+                &mut bytecode,
+                &mut ctxt,
+            );
 
             match block_ty {
                 Ty::Void => bytecode.push(Bytecode::ReturnVoid),
@@ -607,6 +630,7 @@ impl BytecodeEngine {
             Fun {
                 params,
                 return_ty,
+                vars: ctxt.vars,
                 bytecode,
             }
         }

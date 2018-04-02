@@ -102,9 +102,15 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 expression_stack.push(format!("({} < {})", lhs, rhs));
             }
             Bytecode::VarDecl(var_id) => {
+                let var = &fun.vars[*var_id];
                 let rhs = expression_stack.pop().unwrap();
 
-                output += &format!("auto v{} = {};\n", *var_id, rhs);
+                output += &format!("{} v{} = {};\n", codegen_type(&var.ty), *var_id, rhs);
+            }
+            Bytecode::VarDeclUninit(var_id) => {
+                let var = &fun.vars[*var_id];
+
+                output += &format!("{} v{};\n", codegen_type(&var.ty), *var_id);
             }
             Bytecode::Var(var_id) => {
                 expression_stack.push(format!("v{}", var_id));
