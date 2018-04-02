@@ -144,6 +144,19 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
             Bytecode::EndIf => {
                 output += "}\n";
             }
+            Bytecode::BeginWhile => {
+                output += &format!("while(1) {{\n");
+            }
+            Bytecode::WhileCond(_) => {
+                // TODO: Probably should check the condition type for boolean
+                let (cond, _) = var_name_stack
+                    .pop()
+                    .expect("While needs a condition in codegen");
+                output += &format!("if (!v{}) {{ break; }}\n", cond);
+            }
+            Bytecode::EndWhile(_) => {
+                output += "}\n";
+            }
             Bytecode::Assign(var_id) => {
                 let (rhs, _) = var_name_stack.pop().expect("Add needs a rhs in codegen");
                 let id = var_lookup[var_id];

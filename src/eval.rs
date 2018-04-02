@@ -81,6 +81,20 @@ fn eval_fn_bytecode(
                 _ => unimplemented!("Expected boolean condition for if"),
             },
             Bytecode::EndIf => {}
+            Bytecode::BeginWhile => {}
+            Bytecode::WhileCond(offset) => match value_stack.pop() {
+                Some(Value::Bool(cond)) => {
+                    if !cond {
+                        idx += offset + 1; // Eval will also want to skip the EndWhile
+                        continue;
+                    }
+                }
+                _ => unimplemented!("Expected boolean condition for if"),
+            },
+            Bytecode::EndWhile(offset) => {
+                idx -= offset;
+                continue;
+            }
             Bytecode::VarDecl(var_id) => {
                 var_lookup.insert(*var_id, value_stack.len() - 1);
             }

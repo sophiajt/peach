@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use syn::{self, BinOp, Block, Expr, FnArg, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
 
 type VarId = usize;
+type Offset = usize;
 
 #[derive(Debug, Clone)]
 pub enum Bytecode {
@@ -18,8 +19,11 @@ pub enum Bytecode {
     Var(VarId),
     Assign(VarId),
     Call(String),
-    If(usize), // usize here is the offset ahead to jump if the condition is not matched
+    If(Offset), // Offset is number of bytecodes to jump forward if false
     EndIf,
+    BeginWhile,
+    WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
+    EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
     DebugPrint,
 }
 
@@ -227,7 +231,7 @@ impl BytecodeEngine {
                 }
 
                 bytecode.push(Bytecode::If(0));
-                let before_then_len = bytecode.len();
+                let before_block_len = bytecode.len();
 
                 let then_ty = self.convert_block_to_bytecode(
                     &ei.then_branch,
@@ -236,11 +240,39 @@ impl BytecodeEngine {
                     ctxt,
                 );
 
+                let after_block_len = bytecode.len();
                 bytecode.push(Bytecode::EndIf);
-                let after_then_len = bytecode.len();
 
                 // Patch the original offset to the correct offset
-                bytecode[before_then_len - 1] = Bytecode::If(after_then_len - before_then_len + 1);
+                bytecode[before_block_len - 1] =
+                    Bytecode::If(after_block_len - before_block_len + 1);
+
+                then_ty
+            }
+            Expr::While(ew) => {
+                let before_cond_len = bytecode.len();
+                bytecode.push(Bytecode::BeginWhile);
+
+                let cond_type =
+                    self.convert_expr_to_bytecode(&*ew.cond, expected_return_type, bytecode, ctxt);
+
+                match cond_type {
+                    Ty::Bool => {}
+                    _ => unimplemented!("If condition needs to be boolean"),
+                }
+
+                bytecode.push(Bytecode::WhileCond(0));
+                let before_block_len = bytecode.len();
+
+                let then_ty =
+                    self.convert_block_to_bytecode(&ew.body, expected_return_type, bytecode, ctxt);
+
+                let after_block_len = bytecode.len();
+                bytecode.push(Bytecode::EndWhile(after_block_len - before_cond_len));
+
+                // Patch the original offset to the correct offset
+                bytecode[before_block_len - 1] =
+                    Bytecode::WhileCond(after_block_len - before_block_len + 1);
 
                 then_ty
             }
