@@ -14,7 +14,7 @@ fn codegen_type(ty: &Ty) -> String {
 }
 
 fn codegen_fn_header(fn_name: &str, fun: &Fun) -> String {
-    format!("{} {}();", codegen_type(&fun.return_ty), fn_name)
+    format!("{} {}();\n", codegen_type(&fun.return_ty), fn_name)
 }
 
 fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {

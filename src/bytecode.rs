@@ -368,7 +368,7 @@ impl BytecodeEngine {
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Add);
-                        Ty::U64
+                        tighter_of_types(&lhs_type, &rhs_type)
                     } else {
                         unimplemented!("Can't add values of {:?} and {:?}", lhs_type, rhs_type);
                     }
@@ -388,7 +388,7 @@ impl BytecodeEngine {
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Sub);
-                        Ty::U64
+                        tighter_of_types(&lhs_type, &rhs_type)
                     } else {
                         unimplemented!(
                             "Can't subtract values of {:?} and {:?}",
@@ -412,10 +412,10 @@ impl BytecodeEngine {
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Mul);
-                        Ty::U64
+                        tighter_of_types(&lhs_type, &rhs_type)
                     } else {
                         unimplemented!(
-                            "Can't subtract values of {:?} and {:?}",
+                            "Can't multiply values of {:?} and {:?}",
                             lhs_type,
                             rhs_type
                         );
@@ -436,13 +436,9 @@ impl BytecodeEngine {
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Div);
-                        Ty::U64
+                        tighter_of_types(&lhs_type, &rhs_type)
                     } else {
-                        unimplemented!(
-                            "Can't subtract values of {:?} and {:?}",
-                            lhs_type,
-                            rhs_type
-                        );
+                        unimplemented!("Can't divide values of {:?} and {:?}", lhs_type, rhs_type);
                     }
                 }
                 BinOp::Lt(_a) => {
