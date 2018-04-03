@@ -516,7 +516,7 @@ impl BytecodeEngine {
         }
     }
 
-    fn convert_stmt_to_bytecode(
+    pub fn convert_stmt_to_bytecode(
         &mut self,
         stmt: &Stmt,
         expected_return_type: &Ty,
