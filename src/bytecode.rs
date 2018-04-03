@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use syn::{self, BinOp, Block, Expr, FnArg, Item, ItemFn, Lit, Pat, ReturnType, Stmt, Type};
+use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, ItemFn, Lit, Pat, ReturnType, Stmt,
+          Type};
 
 type VarId = usize;
 type Offset = usize;
@@ -238,7 +239,11 @@ impl BytecodeEngine {
             Expr::Lit(el) => match el.lit {
                 Lit::Int(ref li) => {
                     bytecode.push(Bytecode::PushU64(li.value()));
-                    Ty::UnknownInt
+                    match li.suffix() {
+                        IntSuffix::U64 => Ty::U64,
+                        IntSuffix::U32 => Ty::U32,
+                        _ => Ty::UnknownInt,
+                    }
                 }
                 Lit::Bool(ref lb) => {
                     bytecode.push(Bytecode::PushBool(lb.value));
@@ -332,15 +337,14 @@ impl BytecodeEngine {
                 let cond_type =
                     self.convert_expr_to_bytecode(&*ew.cond, expected_return_type, bytecode, ctxt);
 
-                match cond_type {
-                    Ty::Bool => {}
-                    _ => unimplemented!("If condition needs to be boolean"),
+                if cond_type != Ty::Bool {
+                    unimplemented!("If condition needs to be boolean");
                 }
 
                 bytecode.push(Bytecode::WhileCond(0));
                 let before_block_len = bytecode.len();
 
-                let then_ty =
+                let while_ty =
                     self.convert_block_to_bytecode(&ew.body, expected_return_type, bytecode, ctxt);
 
                 let after_block_len = bytecode.len();
@@ -350,7 +354,7 @@ impl BytecodeEngine {
                 bytecode[before_block_len - 1] =
                     Bytecode::WhileCond(after_block_len - before_block_len + 1);
 
-                then_ty
+                while_ty
             }
             Expr::Binary(eb) => match eb.op {
                 BinOp::Add(_a) => {
