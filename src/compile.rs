@@ -5,7 +5,7 @@ fn codegen_type(ty: &Ty) -> String {
     let codegen_ty = match ty {
         Ty::U64 => "unsigned long long".into(),
         Ty::U32 => "unsigned".into(),
-        Ty::UnknownInt => "unsigned".into(),
+        Ty::UnknownInt => "int".into(),
         Ty::Void => "void".into(),
         Ty::Bool => "bool".into(),
         _ => unimplemented!("Can't codegen type: {:?}", ty),

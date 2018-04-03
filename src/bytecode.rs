@@ -67,13 +67,13 @@ impl VarDecl {
 }
 
 #[derive(Clone)]
-struct Context {
+pub struct Context {
     scope: Vec<usize>,
     vars: Vec<VarDecl>,
 }
 
 impl Context {
-    fn new() -> Context {
+    pub fn new() -> Context {
         Context {
             scope: vec![],
             vars: vec![],
@@ -206,7 +206,7 @@ impl BytecodeEngine {
         }
     }
 
-    fn convert_expr_to_bytecode(
+    pub fn convert_expr_to_bytecode(
         &mut self,
         expr: &Expr,
         expected_return_type: &Ty,

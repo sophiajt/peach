@@ -6,3 +6,4 @@ authors = ["Jonathan Turner <jonathan.d.turner@gmail.com>"]
 [dependencies]
 syn = {git = "https://github.com/dtolnay/syn", features = ["full", "extra-traits"] }
 time = "*"
+structopt = "0.2"

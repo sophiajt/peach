@@ -9,24 +9,17 @@ pub enum Value {
     Void,
 }
 
-fn eval_fn_bytecode(
+pub fn eval_block_bytecode(
     bc: &BytecodeEngine,
-    fun: &Fun,
+    bytecode: &Vec<Bytecode>,
+    var_lookup: &mut HashMap<usize, usize>,
     value_stack: &mut Vec<Value>,
     debug_capture: &mut Option<String>,
 ) -> Value {
-    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
-
-    let mut param_offset = fun.params.len();
-    for param in &fun.params {
-        var_lookup.insert(param.var_id, value_stack.len() - param_offset);
-        param_offset -= 1;
-    }
-
-    let bytecode_len = fun.bytecode.len();
+    let bytecode_len = bytecode.len();
     let mut idx = 0;
     while idx < bytecode_len {
-        let code = &fun.bytecode[idx];
+        let code = &bytecode[idx];
         match code {
             Bytecode::ReturnVoid => {
                 return Value::Void;
@@ -140,6 +133,29 @@ fn eval_fn_bytecode(
     }
 
     Value::Void
+}
+
+fn eval_fn_bytecode(
+    bc: &BytecodeEngine,
+    fun: &Fun,
+    value_stack: &mut Vec<Value>,
+    debug_capture: &mut Option<String>,
+) -> Value {
+    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
+
+    let mut param_offset = fun.params.len();
+    for param in &fun.params {
+        var_lookup.insert(param.var_id, value_stack.len() - param_offset);
+        param_offset -= 1;
+    }
+
+    eval_block_bytecode(
+        bc,
+        &fun.bytecode,
+        &mut var_lookup,
+        value_stack,
+        debug_capture,
+    )
 }
 
 pub fn eval_engine(
