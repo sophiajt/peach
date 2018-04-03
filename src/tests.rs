@@ -117,6 +117,11 @@ mod tests {
     }
 
     #[test]
+    fn test_expr12() {
+        run_test("test_files/expr12.rs", "DEBUG: U64(16)", "DEBUG: 16");
+    }
+
+    #[test]
     fn test_fn01() {
         run_test("test_files/fn01.rs", "DEBUG: U64(6)", "DEBUG: 6");
     }

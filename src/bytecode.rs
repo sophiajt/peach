@@ -32,10 +32,12 @@ pub enum Bytecode {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Ty {
     U64,
+    U32,
     Bool,
     Error,
     Void,
     Unknown,
+    UnknownInt,
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +111,47 @@ pub struct BytecodeEngine {
     pub processed_fns: HashMap<String, Fun>,
 }
 
+fn operator_compatible(lhs: &Ty, rhs: &Ty) -> bool {
+    match (lhs, rhs) {
+        (Ty::U64, Ty::U64)
+        | (Ty::U32, Ty::U32)
+        | (Ty::U64, Ty::UnknownInt)
+        | (Ty::U32, Ty::UnknownInt)
+        | (Ty::UnknownInt, Ty::U64)
+        | (Ty::UnknownInt, Ty::U32)
+        | (Ty::UnknownInt, Ty::UnknownInt) => true,
+        _ => false,
+    }
+}
+
+fn assignment_compatible(lhs: &Ty, rhs: &Ty) -> bool {
+    if lhs == rhs {
+        return true;
+    }
+    match (lhs, rhs) {
+        (Ty::U64, Ty::UnknownInt)
+        | (Ty::Unknown, _)
+        | (Ty::U32, Ty::UnknownInt)
+        | (Ty::UnknownInt, Ty::U64)
+        | (Ty::UnknownInt, Ty::U32) => true,
+        _ => false,
+    }
+}
+
+fn tighter_of_types(lhs: &Ty, rhs: &Ty) -> Ty {
+    match (lhs, rhs) {
+        (Ty::U64, _) => Ty::U64,
+        (Ty::U32, _) => Ty::U32,
+        (Ty::Bool, _) => Ty::Bool,
+        (_, Ty::U64) => Ty::U64,
+        (_, Ty::U32) => Ty::U32,
+        (_, Ty::Bool) => Ty::Bool,
+        (Ty::Unknown, rhs) => rhs.clone(),
+        (lhs, Ty::Unknown) => lhs.clone(),
+        _ => lhs.clone(),
+    }
+}
+
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
         BytecodeEngine {
@@ -154,6 +197,7 @@ impl BytecodeEngine {
         match *tp {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
                 "u64" => Ty::U64,
+                "u32" => Ty::U32,
                 "bool" => Ty::Bool,
                 _ => Ty::Error,
             },
@@ -177,7 +221,7 @@ impl BytecodeEngine {
                     None => Ty::Void,
                 };
 
-                if actual_return_type == *expected_return_type {
+                if assignment_compatible(expected_return_type, &actual_return_type) {
                     match actual_return_type {
                         Ty::Void => bytecode.push(Bytecode::ReturnVoid),
                         _ => bytecode.push(Bytecode::ReturnLastStackValue),
@@ -194,7 +238,7 @@ impl BytecodeEngine {
             Expr::Lit(el) => match el.lit {
                 Lit::Int(ref li) => {
                     bytecode.push(Bytecode::PushU64(li.value()));
-                    Ty::U64
+                    Ty::UnknownInt
                 }
                 Lit::Bool(ref lb) => {
                     bytecode.push(Bytecode::PushBool(lb.value));
@@ -216,12 +260,10 @@ impl BytecodeEngine {
                         let var_id = ctxt.find_var(&ident);
                         let var = &mut ctxt.vars[var_id];
 
-                        if var.ty == Ty::Unknown {
-                            var.ty = rhs_type.clone();
-                        }
-
-                        if rhs_type != var.ty {
-                            unimplemented!("Assignment between incompatible types");
+                        if assignment_compatible(&var.ty, &rhs_type) {
+                            var.ty = tighter_of_types(&var.ty, &rhs_type);
+                        } else {
+                            unimplemented!("Assignment between {:?} and {:?}", var.ty, rhs_type);
                         }
 
                         bytecode.push(Bytecode::Assign(var_id));
@@ -324,7 +366,7 @@ impl BytecodeEngine {
                         bytecode,
                         ctxt,
                     );
-                    if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Add);
                         Ty::U64
                     } else {
@@ -344,7 +386,7 @@ impl BytecodeEngine {
                         bytecode,
                         ctxt,
                     );
-                    if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Sub);
                         Ty::U64
                     } else {
@@ -368,7 +410,7 @@ impl BytecodeEngine {
                         bytecode,
                         ctxt,
                     );
-                    if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Mul);
                         Ty::U64
                     } else {
@@ -392,7 +434,7 @@ impl BytecodeEngine {
                         bytecode,
                         ctxt,
                     );
-                    if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+                    if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Div);
                         Ty::U64
                     } else {
@@ -416,7 +458,8 @@ impl BytecodeEngine {
                         bytecode,
                         ctxt,
                     );
-                    if lhs_type == Ty::U64 && rhs_type == Ty::U64 {
+
+                    if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Lt);
                         Ty::Bool
                     } else {
@@ -511,7 +554,7 @@ impl BytecodeEngine {
                             Some(ref explicit_ty) => {
                                 let var_ty = self.resolve_type(&*explicit_ty.1);
 
-                                if var_ty != rhs_ty {
+                                if !assignment_compatible(&var_ty, &rhs_ty) {
                                     unimplemented!(
                                         "Explicit variable type '{:?}' does not match expression type '{:?}'", var_ty, rhs_ty
                                     )
@@ -620,7 +663,7 @@ impl BytecodeEngine {
                 _ => bytecode.push(Bytecode::ReturnLastStackValue),
             }
 
-            if block_ty != return_ty {
+            if !assignment_compatible(&return_ty, &block_ty) {
                 unimplemented!(
                     "Mismatched return types: {:?} and {:?}",
                     block_ty,

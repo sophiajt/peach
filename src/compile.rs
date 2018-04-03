@@ -4,6 +4,8 @@ use time::PreciseTime;
 fn codegen_type(ty: &Ty) -> String {
     let codegen_ty = match ty {
         Ty::U64 => "unsigned long long".into(),
+        Ty::U32 => "unsigned".into(),
+        Ty::UnknownInt => "unsigned".into(),
         Ty::Void => "void".into(),
         Ty::Bool => "bool".into(),
         _ => unimplemented!("Can't codegen type: {:?}", ty),
@@ -142,7 +144,7 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 let cond = expression_stack.pop().unwrap();
 
                 match ty {
-                    Ty::U64 | Ty::Bool => {
+                    Ty::U64 | Ty::Bool | Ty::U32 | Ty::UnknownInt => {
                         output += &format!("{} t{};\n", codegen_type(ty), next_temp_id);
                         temp_id_stack.push(next_temp_id);
                         next_temp_id += 1;
