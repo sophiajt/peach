@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt;
+
 use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, ItemFn, Lit, Pat, ReturnType, Stmt,
           Type};
 
@@ -39,6 +41,24 @@ pub enum Ty {
     Void,
     Unknown,
     UnknownInt,
+}
+
+impl fmt::Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Ty::U64 => "u64",
+                Ty::U32 => "u32",
+                Ty::Bool => "bool",
+                Ty::Error => "{error}",
+                Ty::Void => "void",
+                Ty::Unknown => "{unknown}",
+                Ty::UnknownInt => "{integer}",
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone)]

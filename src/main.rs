@@ -57,7 +57,10 @@ fn main() {
             let mut context = bytecode::Context::new();
             let mut var_lookup: HashMap<usize, usize> = HashMap::new();
             let mut value_stack: Vec<Value> = vec![];
+            let mut show_type = false;
+            let mut show_bytecode = false;
 
+            println!("madness repl (:h for help, :q to quit)");
             loop {
                 let mut bytecode: Vec<Bytecode> = vec![];
                 let mut input = String::new();
@@ -67,21 +70,52 @@ fn main() {
                 stdin().read_line(&mut input).expect("Could not read input");
                 input = input.trim().to_string();
 
-                if input == "quit" {
+                if input == ":quit" || input == ":q" {
                     break;
+                }
+
+                if input == ":type" || input == ":t" {
+                    show_type ^= true;
+                    println!("show type: {}", show_type);
+                    continue;
+                }
+
+                if input == ":bytecode" || input == ":b" {
+                    show_bytecode ^= true;
+                    println!("show bytecode: {}", show_bytecode);
+                    continue;
+                }
+
+                if input == ":stack" || input == ":s" {
+                    println!("{:?}", value_stack);
+                    continue;
+                }
+
+                if input == ":help" || input == ":h" {
+                    println!(":h(elp) - print this help message");
+                    println!(":t(ype) - print the result type");
+                    println!(":b(ytecode) - print the bytecode");
+                    println!(":s(tack) - print the contents of the stack");
+                    println!(":q(uit) - quit repl");
+                    continue;
                 }
 
                 let result = syn::parse_str::<syn::Expr>(&input);
                 match result {
                     Ok(expr) => {
-                        //println!("expr: {:?}", expr);
-                        bc.convert_expr_to_bytecode(
+                        let ty = bc.convert_expr_to_bytecode(
                             &expr,
                             &bytecode::Ty::Unknown,
                             &mut bytecode,
                             &mut context,
                         );
-                        println!("{:?}", bytecode);
+
+                        if show_type {
+                            println!("type: {}", ty);
+                        }
+                        if show_bytecode {
+                            println!("bytecode: {:?}", bytecode);
+                        }
                         eval_block_bytecode(
                             &bc,
                             &bytecode,
@@ -89,29 +123,47 @@ fn main() {
                             &mut value_stack,
                             &mut None,
                         );
-                        if value_stack.len() > 0 {
-                            println!("{:?}", value_stack.pop().unwrap());
-                        }
+
+                        // This funny little trick should, in theory, let us pop off temporaries without popping off our variables
+                        let last = if value_stack.len() > var_lookup.len() {
+                            value_stack.pop().unwrap()
+                        } else {
+                            value_stack.last().unwrap().clone()
+                        };
+
+                        println!("{}", last);
                     }
                     _ => {
                         if input.chars().rev().next() != Some(';') {
                             input.push(';');
                         }
                         let result = syn::parse_str::<syn::Stmt>(&input);
-                        bc.convert_stmt_to_bytecode(
-                            &result.unwrap(),
-                            &bytecode::Ty::Unknown,
-                            &mut bytecode,
-                            &mut context,
-                        );
-                        println!("{:?}", bytecode);
-                        eval_block_bytecode(
-                            &bc,
-                            &bytecode,
-                            &mut var_lookup,
-                            &mut value_stack,
-                            &mut None,
-                        );
+                        match result {
+                            Ok(result) => {
+                                let ty = bc.convert_stmt_to_bytecode(
+                                    &result,
+                                    &bytecode::Ty::Unknown,
+                                    &mut bytecode,
+                                    &mut context,
+                                );
+                                if show_type {
+                                    println!("type: {}", ty);
+                                }
+                                if show_bytecode {
+                                    println!("bytecode: {:?}", bytecode);
+                                }
+                                eval_block_bytecode(
+                                    &bc,
+                                    &bytecode,
+                                    &mut var_lookup,
+                                    &mut value_stack,
+                                    &mut None,
+                                );
+                            }
+                            Err(e) => {
+                                println!("Error: {:?}", e);
+                            }
+                        }
                     }
                 }
             }

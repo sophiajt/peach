@@ -1,5 +1,6 @@
 use bytecode::{Bytecode, BytecodeEngine, Fun};
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -7,6 +8,21 @@ pub enum Value {
     Bool(bool),
     Error,
     Void,
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Value::U64(x) => x.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Error => "error".to_string(),
+                Value::Void => "void".to_string(),
+            }
+        )
+    }
 }
 
 pub fn eval_block_bytecode(
