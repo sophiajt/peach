@@ -59,16 +59,23 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
     for code in &fun.bytecode {
         match code {
             Bytecode::ReturnVoid => {
-                // if we have an outstanding expression (likely void-valued), let its side-effects run
-                if !expression_stack.is_empty() {
-                    let expr = expression_stack.pop().unwrap();
-                    output += &format!("{};\n", expr);                    
+                // if we have an outstanding expression (likely void-valued), let the side-effects run
+                // all the remaining expressions should be in the most compact form
+                for expr in expression_stack {
+                    output += &format!("{};\n", expr);
+
                 }
                 output += "return;\n";
                 break;
             }
             Bytecode::ReturnLastStackValue => {
                 let retval = expression_stack.pop().unwrap();
+                // if we have an outstanding expression (likely void-valued), let the side-effects run
+                // all the remaining expressions should be in the most compact form
+                for expr in expression_stack {
+                    output += &format!("{};\n", expr);
+
+                }
                 output += &format!("return {};\n", retval);
                 break;
             }
@@ -193,13 +200,6 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
                 expression_stack.push(format!("printf(\"DEBUG: %u\\n\", ({}));\n", val));
             }
 
-            Bytecode::StmtEnd => {
-                if !expression_stack.is_empty() {
-                    // Let the possible side effects of pending expressions run
-                    let expr = expression_stack.pop().unwrap();
-                    output += &format!("{};\n", expr);
-                }
-            }
         }
     }
 

@@ -163,10 +163,6 @@ pub fn eval_block_bytecode(
                 },
                 _ => unimplemented!("Internal error: debug printing missing value"),
             },
-            Bytecode::StmtEnd => {
-                // No need to do anything here, all expressions will have evaluated
-                // and possible side effects run
-            }
         }
 
         idx += 1;

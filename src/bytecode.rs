@@ -32,7 +32,6 @@ pub enum Bytecode {
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
     EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
     DebugPrint,
-    StmtEnd,           // Run any pending possibly side-effecting expressions
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -586,7 +585,6 @@ impl BytecodeEngine {
         match stmt {
             Stmt::Semi(ref e, _) => {
                 self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
-                bytecode.push(Bytecode::StmtEnd);
                 Ty::Void
             }
             Stmt::Expr(ref e) => {
