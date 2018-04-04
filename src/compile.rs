@@ -178,34 +178,35 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 match ty {
                     Ty::U64 | Ty::Bool | Ty::U32 | Ty::UnknownInt => {
-                        cfile.codegen_raw(&format!("{} t{};\n", codegen_type(ty), next_temp_id));
+                        cfile.codegen_stmt(&format!("{} t{};\n", codegen_type(ty), next_temp_id));
                         temp_id_stack.push(next_temp_id);
                         next_temp_id += 1;
                     }
                     _ => {}
                 }
 
-                cfile.codegen_raw(&format!("if ({}) {{\n", cond));
+                cfile.codegen_stmt(&format!("if ({}) {{\n", cond));
             }
             Bytecode::Else(_, ty) => {
                 if *ty != Ty::Void {
                     let result = cfile.expression_stack.pop().unwrap();
-                    cfile.codegen_raw(&format!(
+                    cfile.codegen_stmt(&format!(
                         "t{} = {};\n",
                         temp_id_stack.last().unwrap(),
                         result
                     ));
                 }
-                cfile.codegen_raw("} else {\n");
+                cfile.codegen_stmt("} else {\n");
             }
             Bytecode::EndIf(ty) => {
                 if *ty != Ty::Void {
                     let result = cfile.expression_stack.pop().unwrap();
                     let temp_id = temp_id_stack.pop().unwrap();
-                    cfile.codegen_raw(&format!("t{} = {};\n", temp_id, result));
+                    cfile.codegen_stmt(&format!("t{} = {};\n}}\n", temp_id, result));
                     cfile.expression_stack.push(format!("t{}", temp_id));
+                } else {
+                    cfile.codegen_stmt("}\n");
                 }
-                cfile.codegen_raw("}\n");
             }
             Bytecode::BeginWhile => {
                 cfile.codegen_stmt("while(1) {\n");
@@ -322,6 +323,7 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let output_fname = String::new() + path.with_extension("").to_str().unwrap();
 
     let output = Command::new(r"clang")
+        .arg("-w")
         .arg(path)
         .arg("-o")
         .arg(&output_fname)
