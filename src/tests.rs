@@ -46,6 +46,22 @@ mod tests {
         assert_eq!(test_output.trim(), compile_expect);
     }
 
+    fn run_bad_test(fname: &str, expected_error_msg: &str) {
+        use std::panic;
+
+        let result = panic::catch_unwind(|| {
+            load_to_bc(fname);
+        });
+
+        match result {
+            Err(e) => {
+                let error_msg = e.downcast_ref::<String>().unwrap();
+                assert!(error_msg.contains(expected_error_msg));
+            }
+            _ => panic!("Expected failing test is succeeding"),
+        }
+    }
+
     #[test]
     fn test_expr01() {
         run_test("test_files/expr01.rs", "DEBUG: U64(4)", "DEBUG: 4");
@@ -149,6 +165,11 @@ mod tests {
     #[test]
     fn test_var02() {
         run_test("test_files/var02.rs", "DEBUG: U64(3)", "DEBUG: 3");
+    }
+
+    #[test]
+    fn test_var_bad01() {
+        run_bad_test("test_files/var_bad01.rs", "used before being given a value");
     }
 
     #[test]

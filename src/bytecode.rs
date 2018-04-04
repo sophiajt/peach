@@ -5,6 +5,7 @@ use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, ItemFn, Lit, Pat, Re
           Type};
 
 type VarId = usize;
+type TypeId = usize;
 type Offset = usize;
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ pub enum Ty {
     Void,
     Unknown,
     UnknownInt,
+    CustomType(TypeId),
 }
 
 impl fmt::Display for Ty {
@@ -56,6 +58,7 @@ impl fmt::Display for Ty {
                 Ty::Void => "void",
                 Ty::Unknown => "{unknown}",
                 Ty::UnknownInt => "{integer}",
+                Ty::CustomType(_) => "{TODO: print custom type here}",
             }
         )
     }
@@ -125,11 +128,19 @@ pub struct Fun {
     pub bytecode: Vec<Bytecode>,
 }
 
+enum CustomType {
+    Struct,
+}
+
 pub struct BytecodeEngine {
     lazy_fns: HashMap<String, ItemFn>,
 
     //TODO probably don't want this to be public
     pub processed_fns: HashMap<String, Fun>,
+
+    //TODO other lazy things (structs, etc)
+    custom_types: Vec<CustomType>,
+    custom_type_lookup: HashMap<String, TypeId>,
 }
 
 fn operator_compatible(lhs: &Ty, rhs: &Ty) -> bool {
@@ -178,6 +189,9 @@ impl BytecodeEngine {
         BytecodeEngine {
             lazy_fns: HashMap::new(),
             processed_fns: HashMap::new(),
+
+            custom_types: vec![],
+            custom_type_lookup: HashMap::new(),
         }
     }
 
@@ -210,6 +224,14 @@ impl BytecodeEngine {
         self.processed_fns.insert(starting_fn_name.to_string(), fun);
     }
 
+    fn add_custom_type(&mut self, type_name: String, custom_ty: CustomType) -> TypeId {
+        self.custom_types.push(custom_ty);
+        let type_id = self.custom_types.len() - 1;
+        self.custom_type_lookup.insert(type_name, type_id);
+
+        type_id
+    }
+
     fn add_lazy(&mut self, fn_name: String, item_fn: ItemFn) {
         self.lazy_fns.insert(fn_name, item_fn);
     }
@@ -220,7 +242,13 @@ impl BytecodeEngine {
                 "u64" => Ty::U64,
                 "u32" => Ty::U32,
                 "bool" => Ty::Bool,
-                _ => Ty::Error,
+                x => {
+                    if self.custom_type_lookup.contains_key(x) {
+                        Ty::CustomType(self.custom_type_lookup[x])
+                    } else {
+                        Ty::Error
+                    }
+                }
             },
             _ => Ty::Error,
         }
@@ -494,6 +522,10 @@ impl BytecodeEngine {
                 let var_id = ctxt.find_var(&ident);
                 let var = &ctxt.vars[var_id];
 
+                if var.ty == Ty::Unknown {
+                    unimplemented!("{} used before being given a value", ident);
+                }
+
                 bytecode.push(Bytecode::Var(var_id));
 
                 var.ty.clone()
@@ -606,6 +638,16 @@ impl BytecodeEngine {
                 }
             }
             Stmt::Item(ref i) => match i {
+                Item::Struct(is) => {
+                    let type_id = self.add_custom_type(is.ident.to_string(), CustomType::Struct);
+                    match is.fields {
+                        syn::Fields::Unit => {
+                            ctxt.add_var(is.ident.to_string(), Ty::CustomType(type_id));
+                        }
+                        _ => {}
+                    }
+                    Ty::Void
+                }
                 _ => unimplemented!("Unknown item type: {:?}", i),
             },
         }
