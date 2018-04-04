@@ -143,6 +143,11 @@ mod tests {
     }
 
     #[test]
+    fn test_expr_bad01() {
+        run_bad_test("test_files/expr_bad01.rs", "Can't add values of");
+    }
+
+    #[test]
     fn test_fn01() {
         run_test("test_files/fn01.rs", "DEBUG: U64(6)", "DEBUG: 6");
     }
