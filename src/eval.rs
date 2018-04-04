@@ -5,6 +5,7 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum Value {
     U64(u64),
+    U32(u32),
     Bool(bool),
     Error,
     Void,
@@ -17,6 +18,7 @@ impl fmt::Display for Value {
             "{}",
             match self {
                 Value::U64(x) => x.to_string(),
+                Value::U32(x) => x.to_string(),
                 Value::Bool(b) => b.to_string(),
                 Value::Error => "error".to_string(),
                 Value::Void => "void".to_string(),
@@ -48,11 +50,17 @@ pub fn eval_block_bytecode(
                 (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
                     value_stack.push(Value::U64(lhs + rhs));
                 }
+                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                    value_stack.push(Value::U32(lhs + rhs));
+                }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::Sub => match (value_stack.pop(), value_stack.pop()) {
                 (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
                     value_stack.push(Value::U64(lhs - rhs));
+                }
+                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                    value_stack.push(Value::U32(lhs - rhs));
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
@@ -60,11 +68,17 @@ pub fn eval_block_bytecode(
                 (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
                     value_stack.push(Value::U64(lhs * rhs));
                 }
+                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                    value_stack.push(Value::U32(lhs * rhs));
+                }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::Div => match (value_stack.pop(), value_stack.pop()) {
                 (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
                     value_stack.push(Value::U64(lhs / rhs));
+                }
+                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                    value_stack.push(Value::U32(lhs / rhs));
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
@@ -72,10 +86,16 @@ pub fn eval_block_bytecode(
                 (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
                     value_stack.push(Value::Bool(lhs < rhs));
                 }
+                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                    value_stack.push(Value::Bool(lhs < rhs));
+                }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::PushU64(val) => {
                 value_stack.push(Value::U64(*val));
+            }
+            Bytecode::PushU32(val) => {
+                value_stack.push(Value::U32(*val));
             }
             Bytecode::PushBool(val) => {
                 value_stack.push(Value::Bool(*val));

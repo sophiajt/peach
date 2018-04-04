@@ -70,6 +70,9 @@ fn codegen_fn(bc: &BytecodeEngine, fn_name: &str, fun: &Fun) -> String {
             Bytecode::PushU64(val) => {
                 expression_stack.push(val.to_string());
             }
+            Bytecode::PushU32(val) => {
+                expression_stack.push(val.to_string());
+            }
             Bytecode::PushBool(val) => {
                 expression_stack.push(val.to_string());
             }

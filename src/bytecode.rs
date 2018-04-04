@@ -13,6 +13,7 @@ pub enum Bytecode {
     ReturnLastStackValue,
     ReturnVoid,
     PushU64(u64),
+    PushU32(u32),
     PushBool(bool),
     Add,
     Sub,
@@ -285,14 +286,20 @@ impl BytecodeEngine {
                 }
             }
             Expr::Lit(el) => match el.lit {
-                Lit::Int(ref li) => {
-                    bytecode.push(Bytecode::PushU64(li.value()));
-                    match li.suffix() {
-                        IntSuffix::U64 => Ty::U64,
-                        IntSuffix::U32 => Ty::U32,
-                        _ => Ty::UnknownInt,
+                Lit::Int(ref li) => match li.suffix() {
+                    IntSuffix::U64 => {
+                        bytecode.push(Bytecode::PushU64(li.value()));
+                        Ty::U64
                     }
-                }
+                    IntSuffix::U32 => {
+                        bytecode.push(Bytecode::PushU32(li.value() as u32));
+                        Ty::U32
+                    }
+                    _ => {
+                        bytecode.push(Bytecode::PushU64(li.value()));
+                        Ty::UnknownInt
+                    }
+                },
                 Lit::Bool(ref lb) => {
                     bytecode.push(Bytecode::PushBool(lb.value));
                     Ty::Bool
