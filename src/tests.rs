@@ -168,6 +168,16 @@ mod tests {
     }
 
     #[test]
+    fn test_fn04() {
+        run_test("test_files/fn04.rs", "DEBUG: U64(5)", "DEBUG: 5");
+    }
+
+    #[test]
+    fn test_fn05() {
+        run_test("test_files/fn05.rs", "DEBUG: U64(6)", "DEBUG: 6");
+    }
+
+    #[test]
     fn test_var01() {
         run_test("test_files/var01.rs", "DEBUG: U64(4)", "DEBUG: 4");
     }

@@ -28,7 +28,7 @@ fn process(fname: &str, start_fn: &str) -> BytecodeEngine {
 
     // Step 2: Convert to bytecode from the given location
     bc.process(start_fn);
-    //println!("{:#?}", bc.processed_fns);
+    println!("{:#?}", bc.processed_fns);
 
     bc
 }
