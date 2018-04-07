@@ -5,7 +5,6 @@ use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, ItemFn, Lit, Pat, Re
           Type};
 
 type VarId = usize;
-type TypeId = usize;
 type Offset = usize;
 
 #[derive(Debug, Clone)]
@@ -43,7 +42,6 @@ pub enum Ty {
     Void,
     Unknown,
     UnknownInt,
-    CustomType(TypeId),
 }
 
 impl fmt::Display for Ty {
@@ -59,7 +57,6 @@ impl fmt::Display for Ty {
                 Ty::Void => "void",
                 Ty::Unknown => "{unknown}",
                 Ty::UnknownInt => "{integer}",
-                Ty::CustomType(_) => "{TODO: print custom type here}",
             }
         )
     }
@@ -129,10 +126,7 @@ pub struct Fun {
     pub bytecode: Vec<Bytecode>,
 }
 
-enum CustomType {
-    Struct,
-}
-
+/*
 pub struct BytecodeEngine {
     lazy_fns: HashMap<String, ItemFn>,
 
@@ -142,6 +136,26 @@ pub struct BytecodeEngine {
     //TODO other lazy things (structs, etc)
     custom_types: Vec<CustomType>,
     custom_type_lookup: HashMap<String, TypeId>,
+}
+*/
+
+type ScopeId = usize;
+type DefinitionId = usize;
+
+#[derive(Clone)]
+pub enum DefinitionState {
+    Lazy(ItemFn),
+    Processed(Fun),
+}
+
+pub struct Scope {
+    parent: Option<ScopeId>,
+    pub definitions: HashMap<String, DefinitionId>,
+}
+
+pub struct BytecodeEngine {
+    pub scopes: Vec<Scope>,
+    pub definitions: Vec<DefinitionState>,
 }
 
 fn operator_compatible(lhs: &Ty, rhs: &Ty) -> bool {
@@ -187,6 +201,7 @@ fn tighter_of_types(lhs: &Ty, rhs: &Ty) -> Ty {
 
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
+        /*
         BytecodeEngine {
             lazy_fns: HashMap::new(),
             processed_fns: HashMap::new(),
@@ -194,14 +209,49 @@ impl BytecodeEngine {
             custom_types: vec![],
             custom_type_lookup: HashMap::new(),
         }
+        */
+        BytecodeEngine {
+            scopes: vec![
+                Scope {
+                    parent: None,
+                    definitions: HashMap::new(),
+                },
+            ],
+            definitions: vec![],
+        }
     }
 
     // Gets the bytecoded function for the given name
+    /*
     pub fn get_fn(&self, fn_name: &str) -> &Fun {
         if !self.processed_fns.contains_key(fn_name) {
             unimplemented!("Function {} needs to be precomputed", fn_name);
         }
         &self.processed_fns[fn_name]
+    }
+    */
+
+    pub fn get_fn(&self, scope_id: ScopeId, defn_name: &str) -> &Fun {
+        let mut current_scope_id = scope_id;
+
+        while !self.scopes[current_scope_id]
+            .definitions
+            .contains_key(defn_name)
+        {
+            if let Some(parent_id) = self.scopes[current_scope_id].parent {
+                current_scope_id = parent_id;
+            } else {
+                unimplemented!("Definition {} needs to be precomputed", defn_name);
+            }
+        }
+
+        if let DefinitionState::Processed(ref p) =
+            self.definitions[self.scopes[current_scope_id].definitions[defn_name]]
+        {
+            p
+        } else {
+            unimplemented!("Definition {} needs to be precomputed", defn_name)
+        }
     }
 
     pub fn load_file(&mut self, src: &String) {
@@ -211,7 +261,7 @@ impl BytecodeEngine {
             match item {
                 Item::Fn(item_fn) => {
                     let fn_name = item_fn.ident.to_string();
-                    self.add_lazy(fn_name, item_fn);
+                    self.add_lazy(0, fn_name, item_fn);
                 }
                 _ => {
                     unimplemented!("Unknown item type: {:#?}", item);
@@ -220,21 +270,21 @@ impl BytecodeEngine {
         }
     }
 
-    pub fn process(&mut self, starting_fn_name: &str) {
+    pub fn process(&mut self, scope_id: ScopeId, starting_fn_name: &str) {
         let fun = self.convert_fn_to_bytecode(starting_fn_name);
-        self.processed_fns.insert(starting_fn_name.to_string(), fun);
+        //self.processed_fns.insert(starting_fn_name.to_string(), fun);
+
+        let definition_id = self.scopes[scope_id].definitions[starting_fn_name];
+        self.definitions[definition_id] = DefinitionState::Processed(fun);
     }
 
-    fn add_custom_type(&mut self, type_name: String, custom_ty: CustomType) -> TypeId {
-        self.custom_types.push(custom_ty);
-        let type_id = self.custom_types.len() - 1;
-        self.custom_type_lookup.insert(type_name, type_id);
+    fn add_lazy(&mut self, scope_id: ScopeId, fn_name: String, item_fn: ItemFn) {
+        //self.lazy_fns.insert(fn_name, item_fn);
 
-        type_id
-    }
-
-    fn add_lazy(&mut self, fn_name: String, item_fn: ItemFn) {
-        self.lazy_fns.insert(fn_name, item_fn);
+        self.definitions.push(DefinitionState::Lazy(item_fn));
+        self.scopes[scope_id]
+            .definitions
+            .insert(fn_name, self.definitions.len() - 1);
     }
 
     fn resolve_type(&mut self, tp: &Type) -> Ty {
@@ -243,13 +293,7 @@ impl BytecodeEngine {
                 "u64" => Ty::U64,
                 "u32" => Ty::U32,
                 "bool" => Ty::Bool,
-                x => {
-                    if self.custom_type_lookup.contains_key(x) {
-                        Ty::CustomType(self.custom_type_lookup[x])
-                    } else {
-                        Ty::Error
-                    }
-                }
+                _ => Ty::Error,
             },
             _ => Ty::Error,
         }
@@ -550,9 +594,11 @@ impl BytecodeEngine {
                         bytecode.push(Bytecode::DebugPrint);
                         Ty::Void
                     } else {
-                        self.process(&ident);
+                        //TODO: FIXME: this shouldn't be hardwired to scope 0
+                        self.process(0, &ident);
 
-                        let target_fn = self.get_fn(&ident);
+                        //TODO: FIXME: this shouldn't be hardwired to scope 0
+                        let target_fn = self.get_fn(0, &ident);
                         let return_ty = target_fn.return_ty.clone();
 
                         for arg in &ec.args {
@@ -644,19 +690,7 @@ impl BytecodeEngine {
                     }
                 }
             }
-            Stmt::Item(ref i) => match i {
-                Item::Struct(is) => {
-                    let type_id = self.add_custom_type(is.ident.to_string(), CustomType::Struct);
-                    match is.fields {
-                        syn::Fields::Unit => {
-                            ctxt.add_var(is.ident.to_string(), Ty::CustomType(type_id));
-                        }
-                        _ => {}
-                    }
-                    Ty::Void
-                }
-                _ => unimplemented!("Unknown item type: {:?}", i),
-            },
+            _ => unimplemented!("Unsupported stmt type"),
         }
     }
 
@@ -686,6 +720,71 @@ impl BytecodeEngine {
     }
 
     fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> Fun {
+        //TODO: FIXME: don't hardware the scope id
+        let defn_state = self.definitions[self.scopes[0].definitions[fn_name]].clone();
+
+        match defn_state {
+            DefinitionState::Processed(fun) => fun.clone(),
+            DefinitionState::Lazy(item_fn) => {
+                let mut bytecode = Vec::new();
+
+                let return_ty = match &item_fn.decl.output {
+                    ReturnType::Default => Ty::Void,
+                    ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
+                };
+
+                let mut ctxt = Context::new();
+                let mut params = vec![];
+
+                // process function params
+                for input in &item_fn.decl.inputs {
+                    match input {
+                        FnArg::Captured(ref capture) => {
+                            match capture.pat {
+                                Pat::Ident(ref pi) => {
+                                    let ident = pi.ident.to_string();
+                                    let ty = self.resolve_type(&capture.ty);
+                                    let var_id = ctxt.add_var(ident.clone(), ty.clone());
+                                    params.push(Param::new(ident, var_id, ty));
+                                }
+                                _ => {
+                                    unimplemented!("Unsupported pattern type in function parameter")
+                                }
+                            };
+                        }
+                        _ => unimplemented!("Function argument of {:?} is not supported", input),
+                    }
+                }
+
+                let block_ty = self.convert_block_to_bytecode(
+                    &item_fn.block,
+                    &return_ty,
+                    &mut bytecode,
+                    &mut ctxt,
+                );
+
+                match block_ty {
+                    Ty::Void => bytecode.push(Bytecode::ReturnVoid),
+                    _ => bytecode.push(Bytecode::ReturnLastStackValue),
+                }
+
+                if !assignment_compatible(&return_ty, &block_ty) {
+                    unimplemented!(
+                        "Mismatched return types: {:?} and {:?}",
+                        block_ty,
+                        return_ty
+                    );
+                }
+
+                Fun {
+                    params,
+                    return_ty,
+                    vars: ctxt.vars,
+                    bytecode,
+                }
+            }
+        }
+        /*
         if self.processed_fns.contains_key(fn_name) {
             let result = &self.processed_fns[fn_name];
             result.clone()
@@ -747,5 +846,6 @@ impl BytecodeEngine {
                 bytecode,
             }
         }
+        */
     }
 }

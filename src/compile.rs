@@ -102,7 +102,8 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 let rhs = cfile.expression_stack.pop().unwrap();
                 let lhs = cfile.expression_stack.pop().unwrap();
 
-                cfile.delay_expr(format!("({}+{})", lhs, rhs));
+                //cfile.delay_expr(format!("({}+{})", lhs, rhs));
+                cfile.delay_expr(format!("add32({},{})", lhs, rhs));
             }
             Bytecode::Sub => {
                 let rhs = cfile.expression_stack.pop().unwrap();
@@ -153,7 +154,8 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
             }
             Bytecode::Call(fn_name) => {
-                let fun = bc.get_fn(fn_name);
+                //TODO: FIXME: Don't hardcode to scope 0
+                let fun = bc.get_fn(0, fn_name);
                 let mut expr_string = String::new();
 
                 expr_string += &format!("{}(", fn_name);
@@ -171,9 +173,6 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 cfile.delay_expr(expr_string);
             }
             Bytecode::If(_, ty) => {
-                //TODO using codegen_raw here is probably not correct, but if we don't we run
-                //into issues with if expressions
-
                 let cond = cfile.expression_stack.pop().unwrap();
 
                 match ty {
@@ -233,13 +232,43 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     cfile.codegen_raw("#include <stdio.h>\n");
     cfile.codegen_raw("#include <stdbool.h>\n");
+    cfile.codegen_raw("#include <assert.h>\n");
 
+    cfile.codegen_raw("int add32(int lhs, int rhs) {\n");
+    cfile.codegen_raw("int answer = lhs + rhs;\n");
+    cfile.codegen_raw("assert((lhs & 0x8000) == (answer & 0x8000));\n");
+    cfile.codegen_raw("return answer;\n");
+    cfile.codegen_raw("}\n");
+
+    cfile.codegen_raw("int sub32(int lhs, int rhs) {\n");
+    cfile.codegen_raw("int answer = lhs - rhs;\n");
+    cfile.codegen_raw("assert((lhs & 0x8000) == (answer & 0x8000));\n");
+    cfile.codegen_raw("return answer;\n");
+    cfile.codegen_raw("}\n");
+
+    /*
     for fn_name in bc.processed_fns.keys() {
-        let fun = bc.get_fn(fn_name);
+        //TODO: FIXME: Don't hardcode to scope 0
+        let fun = bc.get_fn(0, fn_name);
         cfile.codegen_raw(&codegen_fn_header(fn_name, fun));
     }
     for fn_name in bc.processed_fns.keys() {
-        let fun = bc.get_fn(fn_name);
+        //TODO: FIXME: Don't hardcode to scope 0
+        let fun = bc.get_fn(0, fn_name);
+        &codegen_fn(&mut cfile, bc, fn_name, fun);
+    }
+    */
+
+    //TODO: FIXME: this currently tries to codegen everything rather than processed
+    for fn_name in bc.scopes[0].definitions.keys() {
+        //TODO: FIXME: Don't hardcode to scope 0
+        let fun = bc.get_fn(0, fn_name);
+        cfile.codegen_raw(&codegen_fn_header(fn_name, fun));
+    }
+
+    for fn_name in bc.scopes[0].definitions.keys() {
+        //TODO: FIXME: Don't hardcode to scope 0
+        let fun = bc.get_fn(0, fn_name);
         &codegen_fn(&mut cfile, bc, fn_name, fun);
     }
 

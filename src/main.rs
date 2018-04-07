@@ -27,7 +27,8 @@ fn process(fname: &str, start_fn: &str) -> BytecodeEngine {
     bc.load_file(&src);
 
     // Step 2: Convert to bytecode from the given location
-    bc.process(start_fn);
+    //TODO: FIXME: Don't hardwire to scope 0
+    bc.process(0, start_fn);
     //println!("{:#?}", bc.processed_fns);
 
     bc
@@ -43,7 +44,10 @@ fn main() {
         (Some(ref cmd), Some(ref fname)) if cmd == "build" => {
             let bc = process(&fname, "main");
             let compile_result = compile::compile_bytecode(&bc, &fname);
-            println!("\nCompile result: {:?}", compile_result);
+            match compile_result {
+                Ok(msg) => println!("\nCompile succeeded: {}", msg),
+                Err(e) => println!("\nCompile failed: {}", e),
+            }
         }
         (Some(ref cmd), Some(ref fname)) if cmd == "run" => {
             let bc = process(&fname, "main");
@@ -178,32 +182,4 @@ fn main() {
             println!("   repl");
         }
     }
-
-    /*
-    use std::env;
-
-    let mut args = env::args();
-    let _ = args.next(); // executable name
-
-    for arg in args {
-        let mut file = File::open(&arg).expect("Unable to open file");
-
-        let mut src = String::new();
-        file.read_to_string(&mut src).expect("Unable to read file");
-
-        let mut bc = BytecodeEngine::new();
-
-        // Step 1: Load up the parsed file so that we can lazily convert it
-        bc.load_file(&src);
-
-        // Step 2: Convert to bytecode from the given location
-        bc.process("main");
-        //println!("{:#?}", bc.processed_fns);
-
-        println!("Eval result:");
-        eval::eval_engine(&bc, "main", &mut None);
-        let compile_result = compile::compile_bytecode(&bc, &arg);
-        println!("\nCompile result: {:?}", compile_result);
-    }
-    */
 }

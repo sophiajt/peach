@@ -21,7 +21,8 @@ mod tests {
         bc.load_file(&src);
 
         // Step 2: Convert to bytecode from the given location
-        bc.process("main");
+        //TODO: FIXME: Don't hardwire to scope 0
+        bc.process(0, "main");
 
         bc
     }

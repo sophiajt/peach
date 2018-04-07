@@ -148,7 +148,8 @@ pub fn eval_block_bytecode(
                 _ => unimplemented!("Assignment missing right-hand side value"),
             },
             Bytecode::Call(fn_name) => {
-                let target_fun = bc.get_fn(fn_name);
+                //TODO: FIXME: Don't hardwire to scope 0
+                let target_fun = bc.get_fn(0, fn_name);
                 let result = eval_fn_bytecode(bc, &target_fun, value_stack, debug_capture);
                 value_stack.push(result);
             }
@@ -200,7 +201,8 @@ pub fn eval_engine(
     debug_capture: &mut Option<String>,
 ) -> Value {
     // begin evaluating with the first function
-    let fun = bc.get_fn(starting_fn_name);
+    //TODO: FIXME: Don't hardwire to scope 0
+    let fun = bc.get_fn(0, starting_fn_name);
     let mut value_stack: Vec<Value> = vec![];
 
     eval_fn_bytecode(bc, &fun, &mut value_stack, debug_capture)

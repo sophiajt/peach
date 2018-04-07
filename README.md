@@ -25,6 +25,18 @@ Some possible next steps:
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)
 
+Feels like mod wants to come next
+We could also start a non-lazy mode that's parallel
+  * basically: each Item would be done in parallel.  If you hit a definition you don't have (which is another Item), then
+    you delay yourself with that as the Requirement.  Periodically we flush the enqueued Item tasks and look for ones whose
+    Requirement was met.  
+  * If we wanted, each one could take it all the way to codegen.
+
+Where and how do macros fit in?
+
+
+
+
 Non-next steps:
 
 * Good error messages (would need better parsing library)
