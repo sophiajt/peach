@@ -762,7 +762,7 @@ impl BytecodeEngine {
                     }
                 }
             }
-            _ => unimplemented!("Unsupported stmt type"),
+            _ => Ty::Void, // ignore Item(s) as we've already processed them
         }
     }
 
@@ -779,6 +779,14 @@ impl BytecodeEngine {
         let mut return_ty = Ty::Void;
         self.scopes.push(Scope::new(parent));
         let current_scope_id = self.scopes.len() - 1;
+
+        for stmt in &block.stmts {
+            if let Stmt::Item(ref item) = stmt {
+                if let Item::Fn(ref item_fn) = item {
+                    self.add_lazy(current_scope_id, item_fn.ident.to_string(), item_fn.clone());
+                }
+            }
+        }
 
         for stmt in &block.stmts {
             return_ty = self.convert_stmt_to_bytecode(
