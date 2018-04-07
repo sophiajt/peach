@@ -1,4 +1,4 @@
-use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Ty};
+use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Processed, Ty};
 use time::PreciseTime;
 
 struct CFile {
@@ -254,7 +254,8 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     for (ref scope_id, ref scope) in bc.scopes.iter().enumerate() {
         for fn_name in scope.definitions.keys() {
-            if let DefinitionState::Processed(ref fun) = bc.definitions[scope.definitions[fn_name]]
+            if let DefinitionState::Processed(Processed::Fun(ref fun)) =
+                bc.definitions[scope.definitions[fn_name]]
             {
                 let fn_name = if *scope_id == 0 && fn_name == "main" {
                     fn_name.clone()
@@ -268,7 +269,8 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     for (ref scope_id, ref scope) in bc.scopes.iter().enumerate() {
         for fn_name in scope.definitions.keys() {
-            if let DefinitionState::Processed(ref fun) = bc.definitions[scope.definitions[fn_name]]
+            if let DefinitionState::Processed(Processed::Fun(ref fun)) =
+                bc.definitions[scope.definitions[fn_name]]
             {
                 let fn_name = if *scope_id == 0 && fn_name == "main" {
                     fn_name.clone()

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, ItemFn, Lit, Pat, ReturnType, Stmt,
-          Type};
+use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, ItemFn, ItemMod, Lit, Pat, ReturnType,
+          Stmt, Type};
 
 type VarId = usize;
 type Offset = usize;
@@ -126,26 +126,35 @@ pub struct Fun {
     pub bytecode: Vec<Bytecode>,
 }
 
-/*
-pub struct BytecodeEngine {
-    lazy_fns: HashMap<String, ItemFn>,
-
-    //TODO probably don't want this to be public
-    pub processed_fns: HashMap<String, Fun>,
-
-    //TODO other lazy things (structs, etc)
-    custom_types: Vec<CustomType>,
-    custom_type_lookup: HashMap<String, TypeId>,
+#[derive(Debug, Clone)]
+pub struct Mod {
+    pub scope_id: ScopeId,
 }
-*/
+impl Mod {
+    pub fn new(scope_id: ScopeId) -> Mod {
+        Mod { scope_id }
+    }
+}
 
 type ScopeId = usize;
 type DefinitionId = usize;
 
 #[derive(Clone)]
+pub enum Lazy {
+    ItemFn(ItemFn),
+    ItemMod(ItemMod),
+}
+
+#[derive(Clone)]
+pub enum Processed {
+    Fun(Fun),
+    Mod(Mod),
+}
+
+#[derive(Clone)]
 pub enum DefinitionState {
-    Lazy(ItemFn),
-    Processed(Fun),
+    Lazy(Lazy),
+    Processed(Processed),
 }
 
 pub struct Scope {
@@ -210,15 +219,6 @@ fn tighter_of_types(lhs: &Ty, rhs: &Ty) -> Ty {
 
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
-        /*
-        BytecodeEngine {
-            lazy_fns: HashMap::new(),
-            processed_fns: HashMap::new(),
-
-            custom_types: vec![],
-            custom_type_lookup: HashMap::new(),
-        }
-        */
         BytecodeEngine {
             scopes: vec![
                 Scope {
@@ -229,16 +229,6 @@ impl BytecodeEngine {
             definitions: vec![],
         }
     }
-
-    // Gets the bytecoded function for the given name
-    /*
-    pub fn get_fn(&self, fn_name: &str) -> &Fun {
-        if !self.processed_fns.contains_key(fn_name) {
-            unimplemented!("Function {} needs to be precomputed", fn_name);
-        }
-        &self.processed_fns[fn_name]
-    }
-    */
 
     fn get_defn(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &DefinitionState) {
         let mut current_scope_id = scope_id;
@@ -260,13 +250,26 @@ impl BytecodeEngine {
         )
     }
 
+    // Gets the bytecoded function for the given name
     pub fn get_fn(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &Fun) {
         let (current_scope_id, defn) = self.get_defn(scope_id, defn_name);
 
-        if let DefinitionState::Processed(ref p) = defn {
+        if let DefinitionState::Processed(Processed::Fun(ref p)) = defn {
             (current_scope_id, p)
         } else {
-            unimplemented!("Definition {} needs to be precomputed", defn_name)
+            unimplemented!("Function {} needs to be precomputed", defn_name)
+        }
+    }
+
+    fn get_mod(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &Mod) {
+        //TODO: FIXME: This will look backward instead of staying in the same scope
+        //I think to fix this, we just need to set up parents correctly
+        let (current_scope_id, defn) = self.get_defn(scope_id, defn_name);
+
+        if let DefinitionState::Processed(Processed::Mod(ref p)) = defn {
+            (current_scope_id, p)
+        } else {
+            unimplemented!("Module {} needs to be precomputed", defn_name)
         }
     }
 
@@ -277,7 +280,11 @@ impl BytecodeEngine {
             match item {
                 Item::Fn(item_fn) => {
                     let fn_name = item_fn.ident.to_string();
-                    self.add_lazy(0, fn_name, item_fn);
+                    self.add_lazy_fn(0, fn_name, item_fn);
+                }
+                Item::Mod(item_mod) => {
+                    let mod_name = item_mod.ident.to_string();
+                    self.add_lazy_mod(0, mod_name, item_mod);
                 }
                 _ => {
                     unimplemented!("Unknown item type: {:#?}", item);
@@ -286,21 +293,72 @@ impl BytecodeEngine {
         }
     }
 
-    pub fn process(&mut self, scope_id: ScopeId, starting_fn_name: &str) {
-        let fun = self.convert_fn_to_bytecode(scope_id, starting_fn_name);
-        //self.processed_fns.insert(starting_fn_name.to_string(), fun);
+    pub fn process_fn(&mut self, scope_id: ScopeId, fn_name: &str) {
+        let fun = self.convert_fn_to_bytecode(scope_id, fn_name);
 
-        let definition_id = self.scopes[scope_id].definitions[starting_fn_name];
-        self.definitions[definition_id] = DefinitionState::Processed(fun);
+        let definition_id = self.scopes[scope_id].definitions[fn_name];
+        self.definitions[definition_id] = DefinitionState::Processed(Processed::Fun(fun));
     }
 
-    fn add_lazy(&mut self, scope_id: ScopeId, fn_name: String, item_fn: ItemFn) {
-        //self.lazy_fns.insert(fn_name, item_fn);
+    fn process_mod(&mut self, scope_id: ScopeId, mod_name: &str) {
+        let definition_id;
+        let mut current_scope_id = scope_id;
+        loop {
+            if self.scopes[current_scope_id]
+                .definitions
+                .contains_key(mod_name)
+            {
+                definition_id = self.scopes[current_scope_id].definitions[mod_name];
+                break;
+            } else if let Some(parent) = self.scopes[current_scope_id].parent {
+                current_scope_id = parent;
+            } else {
+                unimplemented!("Couldn't find module: {}", mod_name);
+            }
+        }
 
-        self.definitions.push(DefinitionState::Lazy(item_fn));
+        if let DefinitionState::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id]
+        {
+            self.scopes.push(Scope::new(Some(current_scope_id)));
+            let mod_scope_id = self.scopes.len() - 1;
+
+            match item_mod.content {
+                //TODO: would be great if we didn't clone here and just reused what we had
+                Some(ref content) => for item in content.1.clone() {
+                    match item {
+                        Item::Fn(item_fn) => {
+                            let fn_name = item_fn.ident.to_string();
+                            self.add_lazy_fn(mod_scope_id, fn_name, item_fn);
+                        }
+                        Item::Mod(item_mod) => {
+                            let mod_name = item_mod.ident.to_string();
+                            self.add_lazy_mod(mod_scope_id, mod_name, item_mod);
+                        }
+                        _ => unimplemented!("Unsupport item type in module"),
+                    }
+                },
+                None => {}
+            }
+
+            self.definitions[definition_id] =
+                DefinitionState::Processed(Processed::Mod(Mod::new(mod_scope_id)));
+        }
+    }
+
+    fn add_lazy_fn(&mut self, scope_id: ScopeId, fn_name: String, item_fn: ItemFn) {
+        self.definitions
+            .push(DefinitionState::Lazy(Lazy::ItemFn(item_fn)));
         self.scopes[scope_id]
             .definitions
             .insert(fn_name, self.definitions.len() - 1);
+    }
+
+    fn add_lazy_mod(&mut self, scope_id: ScopeId, mod_name: String, item_mod: ItemMod) {
+        self.definitions
+            .push(DefinitionState::Lazy(Lazy::ItemMod(item_mod)));
+        self.scopes[scope_id]
+            .definitions
+            .insert(mod_name, self.definitions.len() - 1);
     }
 
     fn resolve_type(&mut self, tp: &Type) -> Ty {
@@ -640,8 +698,7 @@ impl BytecodeEngine {
             }
             Expr::Call(ec) => match *ec.func {
                 Expr::Path(ref ep) => {
-                    let ident = ep.path.segments[0].ident.to_string();
-                    if ident == "__debug__" {
+                    if ep.path.segments.len() == 1 && ep.path.segments[0].ident == "__debug__" {
                         self.convert_expr_to_bytecode(
                             &ec.args[0],
                             expected_return_type,
@@ -652,11 +709,24 @@ impl BytecodeEngine {
                         bytecode.push(Bytecode::DebugPrint);
                         Ty::Void
                     } else {
-                        let (fn_scope_id, _) = self.get_defn(current_scope_id, &ident);
+                        let mut mod_scope_id = current_scope_id;
+                        let num_segments = ep.path.segments.len();
 
-                        self.process(fn_scope_id, &ident);
+                        for current_segment in 0..(num_segments - 1) {
+                            let ident = ep.path.segments[current_segment].ident.as_ref();
+                            self.process_mod(mod_scope_id, ident);
+                            let (_, module) = self.get_mod(mod_scope_id, ident);
+                            mod_scope_id = module.scope_id;
+                        }
 
-                        let (scope_id, target_fn) = self.get_fn(current_scope_id, &ident);
+                        // let's find our way to the function
+                        let ident = ep.path.segments[num_segments - 1].ident.to_string();
+
+                        let (fn_scope_id, _) = self.get_defn(mod_scope_id, &ident);
+
+                        self.process_fn(fn_scope_id, &ident);
+
+                        let (scope_id, target_fn) = self.get_fn(mod_scope_id, &ident);
 
                         let return_ty = target_fn.return_ty.clone();
 
@@ -665,7 +735,7 @@ impl BytecodeEngine {
                                 arg,
                                 expected_return_type,
                                 bytecode,
-                                current_scope_id,
+                                mod_scope_id,
                                 ctxt,
                             );
                         }
@@ -783,7 +853,7 @@ impl BytecodeEngine {
         for stmt in &block.stmts {
             if let Stmt::Item(ref item) = stmt {
                 if let Item::Fn(ref item_fn) = item {
-                    self.add_lazy(current_scope_id, item_fn.ident.to_string(), item_fn.clone());
+                    self.add_lazy_fn(current_scope_id, item_fn.ident.to_string(), item_fn.clone());
                 }
             }
         }
@@ -807,8 +877,8 @@ impl BytecodeEngine {
         let defn_state = self.definitions[self.scopes[scope_id].definitions[fn_name]].clone();
 
         match defn_state {
-            DefinitionState::Processed(fun) => fun.clone(),
-            DefinitionState::Lazy(item_fn) => {
+            DefinitionState::Processed(Processed::Fun(fun)) => fun.clone(),
+            DefinitionState::Lazy(Lazy::ItemFn(item_fn)) => {
                 let mut bytecode = Vec::new();
 
                 let return_ty = match &item_fn.decl.output {
@@ -867,69 +937,7 @@ impl BytecodeEngine {
                     bytecode,
                 }
             }
+            _ => unimplemented!("Could not find function for {}", fn_name),
         }
-        /*
-        if self.processed_fns.contains_key(fn_name) {
-            let result = &self.processed_fns[fn_name];
-            result.clone()
-        } else {
-            let item_fn = self.lazy_fns.remove(fn_name).unwrap();
-
-            let mut bytecode = Vec::new();
-
-            let return_ty = match &item_fn.decl.output {
-                ReturnType::Default => Ty::Void,
-                ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
-            };
-
-            let mut ctxt = Context::new();
-            let mut params = vec![];
-
-            // process function params
-            for input in &item_fn.decl.inputs {
-                match input {
-                    FnArg::Captured(ref capture) => {
-                        match capture.pat {
-                            Pat::Ident(ref pi) => {
-                                let ident = pi.ident.to_string();
-                                let ty = self.resolve_type(&capture.ty);
-                                let var_id = ctxt.add_var(ident.clone(), ty.clone());
-                                params.push(Param::new(ident, var_id, ty));
-                            }
-                            _ => unimplemented!("Unsupported pattern type in function parameter"),
-                        };
-                    }
-                    _ => unimplemented!("Function argument of {:?} is not supported", input),
-                }
-            }
-
-            let block_ty = self.convert_block_to_bytecode(
-                &item_fn.block,
-                &return_ty,
-                &mut bytecode,
-                &mut ctxt,
-            );
-
-            match block_ty {
-                Ty::Void => bytecode.push(Bytecode::ReturnVoid),
-                _ => bytecode.push(Bytecode::ReturnLastStackValue),
-            }
-
-            if !assignment_compatible(&return_ty, &block_ty) {
-                unimplemented!(
-                    "Mismatched return types: {:?} and {:?}",
-                    block_ty,
-                    return_ty
-                );
-            }
-
-            Fun {
-                params,
-                return_ty,
-                vars: ctxt.vars,
-                bytecode,
-            }
-        }
-        */
     }
 }
