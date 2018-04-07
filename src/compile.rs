@@ -102,8 +102,9 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 let rhs = cfile.expression_stack.pop().unwrap();
                 let lhs = cfile.expression_stack.pop().unwrap();
 
-                //cfile.delay_expr(format!("({}+{})", lhs, rhs));
-                cfile.delay_expr(format!("add32({},{})", lhs, rhs));
+                cfile.delay_expr(format!("({}+{})", lhs, rhs));
+                // For checked add
+                //cfile.delay_expr(format!("add32({},{})", lhs, rhs));
             }
             Bytecode::Sub => {
                 let rhs = cfile.expression_stack.pop().unwrap();
@@ -154,11 +155,10 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
             }
             Bytecode::Call(scope_id, fn_name) => {
-                //TODO: FIXME: Don't hardcode to scope 0
                 let (_, fun) = bc.get_fn(*scope_id, fn_name);
                 let mut expr_string = String::new();
 
-                expr_string += &format!("{}(", fn_name);
+                expr_string += &format!("{}_{}(", fn_name, scope_id);
                 let expression_stack_len = cfile.expression_stack.len();
                 let mut offset = fun.params.len();
                 while offset > 0 {
@@ -170,6 +170,9 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 }
 
                 expr_string += ")";
+                for _ in 0..fun.params.len() {
+                    cfile.expression_stack.pop();
+                }
                 cfile.delay_expr(expr_string);
             }
             Bytecode::If(_, ty) => {
@@ -232,6 +235,8 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     cfile.codegen_raw("#include <stdio.h>\n");
     cfile.codegen_raw("#include <stdbool.h>\n");
+    /* 
+    // If we wanted checked add/sub we can use something like this:
     cfile.codegen_raw("#include <assert.h>\n");
 
     cfile.codegen_raw("int add32(int lhs, int rhs) {\n");
@@ -245,35 +250,33 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     cfile.codegen_raw("assert((lhs & 0x8000) == (answer & 0x8000));\n");
     cfile.codegen_raw("return answer;\n");
     cfile.codegen_raw("}\n");
-
-    /*
-    for fn_name in bc.processed_fns.keys() {
-        //TODO: FIXME: Don't hardcode to scope 0
-        let fun = bc.get_fn(0, fn_name);
-        cfile.codegen_raw(&codegen_fn_header(fn_name, fun));
-    }
-    for fn_name in bc.processed_fns.keys() {
-        //TODO: FIXME: Don't hardcode to scope 0
-        let fun = bc.get_fn(0, fn_name);
-        &codegen_fn(&mut cfile, bc, fn_name, fun);
-    }
     */
 
-    for fn_name in bc.scopes[0].definitions.keys() {
-        //TODO: FIXME: Don't hardcode to scope 0
-        if let DefinitionState::Processed(ref fun) =
-            bc.definitions[bc.scopes[0].definitions[fn_name]]
-        {
-            cfile.codegen_raw(&codegen_fn_header(fn_name, fun));
+    for (ref scope_id, ref scope) in bc.scopes.iter().enumerate() {
+        for fn_name in scope.definitions.keys() {
+            if let DefinitionState::Processed(ref fun) = bc.definitions[scope.definitions[fn_name]]
+            {
+                let fn_name = if *scope_id == 0 && fn_name == "main" {
+                    fn_name.clone()
+                } else {
+                    format!("{}_{}", fn_name, scope_id)
+                };
+                cfile.codegen_raw(&codegen_fn_header(&fn_name, fun));
+            }
         }
     }
 
-    for fn_name in bc.scopes[0].definitions.keys() {
-        //TODO: FIXME: Don't hardcode to scope 0
-        if let DefinitionState::Processed(ref fun) =
-            bc.definitions[bc.scopes[0].definitions[fn_name]]
-        {
-            &codegen_fn(&mut cfile, bc, fn_name, fun);
+    for (ref scope_id, ref scope) in bc.scopes.iter().enumerate() {
+        for fn_name in scope.definitions.keys() {
+            if let DefinitionState::Processed(ref fun) = bc.definitions[scope.definitions[fn_name]]
+            {
+                let fn_name = if *scope_id == 0 && fn_name == "main" {
+                    fn_name.clone()
+                } else {
+                    format!("{}_{}", fn_name, scope_id)
+                };
+                codegen_fn(&mut cfile, bc, &fn_name, fun);
+            }
         }
     }
 
