@@ -199,6 +199,11 @@ mod tests {
     }
 
     #[test]
+    fn test_var03() {
+        run_test("test_files/var03.rs", "DEBUG: Bool(true)", "DEBUG: 1");
+    }
+
+    #[test]
     fn test_var_bad01() {
         run_bad_test("test_files/var_bad01.rs", "used before being given a value");
     }

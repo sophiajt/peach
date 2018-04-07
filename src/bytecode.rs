@@ -109,7 +109,7 @@ impl Context {
     }
 
     fn find_var(&self, ident: &String) -> usize {
-        for var in &self.scope {
+        for var in self.scope.iter().rev() {
             if ident == &self.vars[*var].ident {
                 return *var;
             }
@@ -303,6 +303,7 @@ impl BytecodeEngine {
     fn process_mod(&mut self, scope_id: ScopeId, mod_name: &str) {
         let definition_id;
         let mut current_scope_id = scope_id;
+        //TODO: FIXME: we should sometimes not backtrack like this through the scopes
         loop {
             if self.scopes[current_scope_id]
                 .definitions
