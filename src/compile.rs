@@ -1,4 +1,4 @@
-use bytecode::{Bytecode, BytecodeEngine, Fun, Ty};
+use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Ty};
 use time::PreciseTime;
 
 struct CFile {
@@ -153,9 +153,9 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
             }
-            Bytecode::Call(fn_name) => {
+            Bytecode::Call(scope_id, fn_name) => {
                 //TODO: FIXME: Don't hardcode to scope 0
-                let fun = bc.get_fn(0, fn_name);
+                let (_, fun) = bc.get_fn(*scope_id, fn_name);
                 let mut expr_string = String::new();
 
                 expr_string += &format!("{}(", fn_name);
@@ -259,17 +259,22 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     }
     */
 
-    //TODO: FIXME: this currently tries to codegen everything rather than processed
     for fn_name in bc.scopes[0].definitions.keys() {
         //TODO: FIXME: Don't hardcode to scope 0
-        let fun = bc.get_fn(0, fn_name);
-        cfile.codegen_raw(&codegen_fn_header(fn_name, fun));
+        if let DefinitionState::Processed(ref fun) =
+            bc.definitions[bc.scopes[0].definitions[fn_name]]
+        {
+            cfile.codegen_raw(&codegen_fn_header(fn_name, fun));
+        }
     }
 
     for fn_name in bc.scopes[0].definitions.keys() {
         //TODO: FIXME: Don't hardcode to scope 0
-        let fun = bc.get_fn(0, fn_name);
-        &codegen_fn(&mut cfile, bc, fn_name, fun);
+        if let DefinitionState::Processed(ref fun) =
+            bc.definitions[bc.scopes[0].definitions[fn_name]]
+        {
+            &codegen_fn(&mut cfile, bc, fn_name, fun);
+        }
     }
 
     cfile.output_src

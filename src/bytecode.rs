@@ -23,7 +23,7 @@ pub enum Bytecode {
     VarDeclUninit(VarId),
     Var(VarId),
     Assign(VarId),
-    Call(String),
+    Call(ScopeId, String),
     If(Offset, Ty), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
     Else(Offset, Ty), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
     EndIf(Ty),        //includes the type of the result, if this is an expression
@@ -153,6 +153,15 @@ pub struct Scope {
     pub definitions: HashMap<String, DefinitionId>,
 }
 
+impl Scope {
+    fn new(parent: Option<ScopeId>) -> Scope {
+        Scope {
+            parent,
+            definitions: HashMap::new(),
+        }
+    }
+}
+
 pub struct BytecodeEngine {
     pub scopes: Vec<Scope>,
     pub definitions: Vec<DefinitionState>,
@@ -231,7 +240,7 @@ impl BytecodeEngine {
     }
     */
 
-    pub fn get_fn(&self, scope_id: ScopeId, defn_name: &str) -> &Fun {
+    fn get_defn(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &DefinitionState) {
         let mut current_scope_id = scope_id;
 
         while !self.scopes[current_scope_id]
@@ -245,10 +254,17 @@ impl BytecodeEngine {
             }
         }
 
-        if let DefinitionState::Processed(ref p) =
-            self.definitions[self.scopes[current_scope_id].definitions[defn_name]]
-        {
-            p
+        (
+            current_scope_id,
+            &self.definitions[self.scopes[current_scope_id].definitions[defn_name]],
+        )
+    }
+
+    pub fn get_fn(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &Fun) {
+        let (current_scope_id, defn) = self.get_defn(scope_id, defn_name);
+
+        if let DefinitionState::Processed(ref p) = defn {
+            (current_scope_id, p)
         } else {
             unimplemented!("Definition {} needs to be precomputed", defn_name)
         }
@@ -271,7 +287,7 @@ impl BytecodeEngine {
     }
 
     pub fn process(&mut self, scope_id: ScopeId, starting_fn_name: &str) {
-        let fun = self.convert_fn_to_bytecode(starting_fn_name);
+        let fun = self.convert_fn_to_bytecode(scope_id, starting_fn_name);
         //self.processed_fns.insert(starting_fn_name.to_string(), fun);
 
         let definition_id = self.scopes[scope_id].definitions[starting_fn_name];
@@ -304,14 +320,19 @@ impl BytecodeEngine {
         expr: &Expr,
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
+        current_scope_id: ScopeId,
         ctxt: &mut Context,
     ) -> Ty {
         match expr {
             Expr::Return(er) => {
                 let actual_return_type = match er.expr {
-                    Some(ref inner) => {
-                        self.convert_expr_to_bytecode(inner, expected_return_type, bytecode, ctxt)
-                    }
+                    Some(ref inner) => self.convert_expr_to_bytecode(
+                        inner,
+                        expected_return_type,
+                        bytecode,
+                        current_scope_id,
+                        ctxt,
+                    ),
                     None => Ty::Void,
                 };
 
@@ -350,12 +371,21 @@ impl BytecodeEngine {
                 }
                 _ => unimplemented!("unknown literal: {:?}", el),
             },
-            Expr::Paren(ep) => {
-                self.convert_expr_to_bytecode(&*ep.expr, expected_return_type, bytecode, ctxt)
-            }
+            Expr::Paren(ep) => self.convert_expr_to_bytecode(
+                &*ep.expr,
+                expected_return_type,
+                bytecode,
+                current_scope_id,
+                ctxt,
+            ),
             Expr::Assign(ea) => {
-                let rhs_type =
-                    self.convert_expr_to_bytecode(&*ea.right, expected_return_type, bytecode, ctxt);
+                let rhs_type = self.convert_expr_to_bytecode(
+                    &*ea.right,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    ctxt,
+                );
 
                 match &*ea.left {
                     Expr::Path(ep) => {
@@ -378,8 +408,13 @@ impl BytecodeEngine {
                 Ty::Void
             }
             Expr::If(ei) => {
-                let cond_type =
-                    self.convert_expr_to_bytecode(&*ei.cond, expected_return_type, bytecode, ctxt);
+                let cond_type = self.convert_expr_to_bytecode(
+                    &*ei.cond,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    ctxt,
+                );
 
                 match cond_type {
                     Ty::Bool => {}
@@ -393,6 +428,7 @@ impl BytecodeEngine {
                     &ei.then_branch,
                     expected_return_type,
                     bytecode,
+                    Some(current_scope_id),
                     ctxt,
                 );
                 let after_then_block_len = bytecode.len();
@@ -405,6 +441,7 @@ impl BytecodeEngine {
                                 &eb.block,
                                 expected_return_type,
                                 bytecode,
+                                Some(current_scope_id),
                                 ctxt,
                             );
 
@@ -433,8 +470,13 @@ impl BytecodeEngine {
                 let before_cond_len = bytecode.len();
                 bytecode.push(Bytecode::BeginWhile);
 
-                let cond_type =
-                    self.convert_expr_to_bytecode(&*ew.cond, expected_return_type, bytecode, ctxt);
+                let cond_type = self.convert_expr_to_bytecode(
+                    &*ew.cond,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    ctxt,
+                );
 
                 if cond_type != Ty::Bool {
                     unimplemented!("If condition needs to be boolean");
@@ -443,8 +485,13 @@ impl BytecodeEngine {
                 bytecode.push(Bytecode::WhileCond(0));
                 let before_block_len = bytecode.len();
 
-                let while_ty =
-                    self.convert_block_to_bytecode(&ew.body, expected_return_type, bytecode, ctxt);
+                let while_ty = self.convert_block_to_bytecode(
+                    &ew.body,
+                    expected_return_type,
+                    bytecode,
+                    Some(current_scope_id),
+                    ctxt,
+                );
 
                 let after_block_len = bytecode.len();
                 bytecode.push(Bytecode::EndWhile(after_block_len - before_cond_len));
@@ -461,12 +508,14 @@ impl BytecodeEngine {
                         &*eb.left,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
@@ -481,12 +530,14 @@ impl BytecodeEngine {
                         &*eb.left,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
@@ -505,12 +556,14 @@ impl BytecodeEngine {
                         &*eb.left,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
@@ -529,12 +582,14 @@ impl BytecodeEngine {
                         &*eb.left,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
@@ -549,12 +604,14 @@ impl BytecodeEngine {
                         &*eb.left,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
+                        current_scope_id,
                         ctxt,
                     );
 
@@ -589,16 +646,18 @@ impl BytecodeEngine {
                             &ec.args[0],
                             expected_return_type,
                             bytecode,
+                            current_scope_id,
                             ctxt,
                         );
                         bytecode.push(Bytecode::DebugPrint);
                         Ty::Void
                     } else {
-                        //TODO: FIXME: this shouldn't be hardwired to scope 0
-                        self.process(0, &ident);
+                        let (fn_scope_id, _) = self.get_defn(current_scope_id, &ident);
 
-                        //TODO: FIXME: this shouldn't be hardwired to scope 0
-                        let target_fn = self.get_fn(0, &ident);
+                        self.process(fn_scope_id, &ident);
+
+                        let (scope_id, target_fn) = self.get_fn(current_scope_id, &ident);
+
                         let return_ty = target_fn.return_ty.clone();
 
                         for arg in &ec.args {
@@ -606,11 +665,12 @@ impl BytecodeEngine {
                                 arg,
                                 expected_return_type,
                                 bytecode,
+                                current_scope_id,
                                 ctxt,
                             );
                         }
 
-                        bytecode.push(Bytecode::Call(ident));
+                        bytecode.push(Bytecode::Call(scope_id, ident));
 
                         return_ty
                     }
@@ -626,16 +686,27 @@ impl BytecodeEngine {
         stmt: &Stmt,
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
+        current_scope_id: ScopeId,
         ctxt: &mut Context,
     ) -> Ty {
         match stmt {
             Stmt::Semi(ref e, _) => {
-                self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt);
+                self.convert_expr_to_bytecode(
+                    e,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    ctxt,
+                );
                 Ty::Void
             }
-            Stmt::Expr(ref e) => {
-                self.convert_expr_to_bytecode(e, expected_return_type, bytecode, ctxt)
-            }
+            Stmt::Expr(ref e) => self.convert_expr_to_bytecode(
+                e,
+                expected_return_type,
+                bytecode,
+                current_scope_id,
+                ctxt,
+            ),
             Stmt::Local(ref l) => {
                 let ident = match *l.pat {
                     Pat::Ident(ref pi) => pi.ident.to_string(),
@@ -647,6 +718,7 @@ impl BytecodeEngine {
                             &*foo.1,
                             expected_return_type,
                             bytecode,
+                            current_scope_id,
                             ctxt,
                         );
 
@@ -699,17 +771,21 @@ impl BytecodeEngine {
         block: &Block,
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
+        parent: Option<ScopeId>,
         ctxt: &mut Context,
     ) -> Ty {
         //TODO: there may be more efficient ways to do this, but this will do for now
         let mut block_ctxt = ctxt.clone();
         let mut return_ty = Ty::Void;
+        self.scopes.push(Scope::new(parent));
+        let current_scope_id = self.scopes.len() - 1;
 
         for stmt in &block.stmts {
             return_ty = self.convert_stmt_to_bytecode(
                 stmt,
                 &expected_return_type,
                 bytecode,
+                current_scope_id,
                 &mut block_ctxt,
             );
         }
@@ -719,9 +795,8 @@ impl BytecodeEngine {
         return_ty
     }
 
-    fn convert_fn_to_bytecode(&mut self, fn_name: &str) -> Fun {
-        //TODO: FIXME: don't hardware the scope id
-        let defn_state = self.definitions[self.scopes[0].definitions[fn_name]].clone();
+    fn convert_fn_to_bytecode(&mut self, scope_id: ScopeId, fn_name: &str) -> Fun {
+        let defn_state = self.definitions[self.scopes[scope_id].definitions[fn_name]].clone();
 
         match defn_state {
             DefinitionState::Processed(fun) => fun.clone(),
@@ -760,6 +835,7 @@ impl BytecodeEngine {
                     &item_fn.block,
                     &return_ty,
                     &mut bytecode,
+                    Some(scope_id),
                     &mut ctxt,
                 );
 

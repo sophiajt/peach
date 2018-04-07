@@ -27,7 +27,7 @@ fn process(fname: &str, start_fn: &str) -> BytecodeEngine {
     bc.load_file(&src);
 
     // Step 2: Convert to bytecode from the given location
-    //TODO: FIXME: Don't hardwire to scope 0
+    // We assume the starting function is found in scope 0, the starting scope
     bc.process(0, start_fn);
     //println!("{:#?}", bc.processed_fns);
 
@@ -111,6 +111,7 @@ fn main() {
                             &expr,
                             &bytecode::Ty::Unknown,
                             &mut bytecode,
+                            0, // hardwire repl scope to 0
                             &mut context,
                         );
 
@@ -148,6 +149,7 @@ fn main() {
                                     &result,
                                     &bytecode::Ty::Unknown,
                                     &mut bytecode,
+                                    0, // hardwire repl scope to 0
                                     &mut context,
                                 );
                                 if show_type {

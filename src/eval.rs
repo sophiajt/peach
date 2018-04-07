@@ -147,9 +147,8 @@ pub fn eval_block_bytecode(
                 }
                 _ => unimplemented!("Assignment missing right-hand side value"),
             },
-            Bytecode::Call(fn_name) => {
-                //TODO: FIXME: Don't hardwire to scope 0
-                let target_fun = bc.get_fn(0, fn_name);
+            Bytecode::Call(scope_id, fn_name) => {
+                let (_, target_fun) = bc.get_fn(*scope_id, fn_name);
                 let result = eval_fn_bytecode(bc, &target_fun, value_stack, debug_capture);
                 value_stack.push(result);
             }
@@ -201,8 +200,8 @@ pub fn eval_engine(
     debug_capture: &mut Option<String>,
 ) -> Value {
     // begin evaluating with the first function
-    //TODO: FIXME: Don't hardwire to scope 0
-    let fun = bc.get_fn(0, starting_fn_name);
+    // We assume scope 0 is the file root scope of the starting file, where will find the main
+    let (_, fun) = bc.get_fn(0, starting_fn_name);
     let mut value_stack: Vec<Value> = vec![];
 
     eval_fn_bytecode(bc, &fun, &mut value_stack, debug_capture)
