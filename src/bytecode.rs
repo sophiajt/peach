@@ -88,15 +88,15 @@ impl VarDecl {
 }
 
 #[derive(Clone)]
-pub struct Context {
-    scope: Vec<usize>,
+pub struct VarStack {
+    var_stack: Vec<usize>,
     vars: Vec<VarDecl>,
 }
 
-impl Context {
-    pub fn new() -> Context {
-        Context {
-            scope: vec![],
+impl VarStack {
+    pub fn new() -> VarStack {
+        VarStack {
+            var_stack: vec![],
             vars: vec![],
         }
     }
@@ -104,13 +104,13 @@ impl Context {
     fn add_var(&mut self, ident: String, ty: Ty) -> usize {
         self.vars.push(VarDecl::new(ident, ty));
         let pos = self.vars.len() - 1;
-        self.scope.push(pos);
+        self.var_stack.push(pos);
         pos
     }
 
     //TODO: this probably should be a Result in the future
     fn find_var(&self, ident: &str) -> Option<usize> {
-        for var in self.scope.iter().rev() {
+        for var in self.var_stack.iter().rev() {
             if ident == &self.vars[*var].ident {
                 return Some(*var);
             }
@@ -234,6 +234,9 @@ impl BytecodeEngine {
         }
     }
 
+    /// Will find the definition id for the given name, by starting at the scope given and working up through the scopes
+    /// until the matching definition is found.
+    /// Returns the corresponding definition id with the scope it was found in
     fn get_defn(&self, defn_name: &str, starting_scope_id: ScopeId) -> (DefinitionId, ScopeId) {
         let mut current_scope_id = starting_scope_id;
 
@@ -391,7 +394,7 @@ impl BytecodeEngine {
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
-        ctxt: &mut Context,
+        var_stack: &mut VarStack,
     ) -> Ty {
         match expr {
             Expr::Return(er) => {
@@ -401,7 +404,7 @@ impl BytecodeEngine {
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     ),
                     None => Ty::Void,
                 };
@@ -446,14 +449,14 @@ impl BytecodeEngine {
                 expected_return_type,
                 bytecode,
                 current_scope_id,
-                ctxt,
+                var_stack,
             ),
             Expr::Block(eb) => self.convert_block_to_bytecode(
                 &eb.block,
                 expected_return_type,
                 bytecode,
                 Some(current_scope_id),
-                ctxt,
+                var_stack,
             ),
             Expr::Assign(ea) => {
                 let rhs_type = self.convert_expr_to_bytecode(
@@ -461,19 +464,19 @@ impl BytecodeEngine {
                     expected_return_type,
                     bytecode,
                     current_scope_id,
-                    ctxt,
+                    var_stack,
                 );
 
                 match &*ea.left {
                     Expr::Path(ep) => {
                         let ident = ep.path.segments[0].ident.to_string();
 
-                        let var_id = ctxt.find_var(&ident);
+                        let var_id = var_stack.find_var(&ident);
                         if var_id.is_none() {
                             unimplemented!("Could not find variable: {}", ident);
                         }
                         let var_id = var_id.unwrap();
-                        let var = &mut ctxt.vars[var_id];
+                        let var = &mut var_stack.vars[var_id];
 
                         if assignment_compatible(&var.ty, &rhs_type) {
                             var.ty = tighter_of_types(&var.ty, &rhs_type);
@@ -494,7 +497,7 @@ impl BytecodeEngine {
                     expected_return_type,
                     bytecode,
                     current_scope_id,
-                    ctxt,
+                    var_stack,
                 );
 
                 match cond_type {
@@ -510,7 +513,7 @@ impl BytecodeEngine {
                     expected_return_type,
                     bytecode,
                     Some(current_scope_id),
-                    ctxt,
+                    var_stack,
                 );
                 let after_then_block_len = bytecode.len();
 
@@ -523,7 +526,7 @@ impl BytecodeEngine {
                                 expected_return_type,
                                 bytecode,
                                 Some(current_scope_id),
-                                ctxt,
+                                var_stack,
                             );
 
                             if then_ty != else_ty {
@@ -556,7 +559,7 @@ impl BytecodeEngine {
                     expected_return_type,
                     bytecode,
                     current_scope_id,
-                    ctxt,
+                    var_stack,
                 );
 
                 if cond_type != Ty::Bool {
@@ -571,7 +574,7 @@ impl BytecodeEngine {
                     expected_return_type,
                     bytecode,
                     Some(current_scope_id),
-                    ctxt,
+                    var_stack,
                 );
 
                 let after_block_len = bytecode.len();
@@ -590,14 +593,14 @@ impl BytecodeEngine {
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Add);
@@ -612,14 +615,14 @@ impl BytecodeEngine {
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Sub);
@@ -638,14 +641,14 @@ impl BytecodeEngine {
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Mul);
@@ -664,14 +667,14 @@ impl BytecodeEngine {
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     if operator_compatible(&lhs_type, &rhs_type) {
                         bytecode.push(Bytecode::Div);
@@ -686,14 +689,14 @@ impl BytecodeEngine {
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
                     let rhs_type = self.convert_expr_to_bytecode(
                         &*eb.right,
                         expected_return_type,
                         bytecode,
                         current_scope_id,
-                        ctxt,
+                        var_stack,
                     );
 
                     if operator_compatible(&lhs_type, &rhs_type) {
@@ -708,12 +711,12 @@ impl BytecodeEngine {
             Expr::Path(ep) => {
                 let ident = ep.path.segments[0].ident.to_string();
 
-                let var_id = ctxt.find_var(&ident);
+                let var_id = var_stack.find_var(&ident);
                 if var_id.is_none() {
                     unimplemented!("Could not find {}", ident);
                 }
                 let var_id = var_id.unwrap();
-                let var = &ctxt.vars[var_id];
+                let var = &var_stack.vars[var_id];
 
                 if var.ty == Ty::Unknown {
                     unimplemented!("{} used before being given a value", ident);
@@ -731,7 +734,7 @@ impl BytecodeEngine {
                             expected_return_type,
                             bytecode,
                             current_scope_id,
-                            ctxt,
+                            var_stack,
                         );
                         bytecode.push(Bytecode::DebugPrint);
                         Ty::Void
@@ -739,12 +742,12 @@ impl BytecodeEngine {
                         // If we're in a single ident path, check values in scope
                         if ep.path.segments.len() == 1 && ep.path.leading_colon.is_none() {
                             let ident = ep.path.segments[0].ident;
-                            let var_result = ctxt.find_var(ident.as_ref());
+                            let var_result = var_stack.find_var(ident.as_ref());
                             if let Some(var_id) = var_result {
                                 //TODO: FIXME: in the future check this for lambda
                                 unimplemented!(
                                     "Can not call function on type {:?}",
-                                    ctxt.vars[var_id].ty
+                                    var_stack.vars[var_id].ty
                                 );
                             }
                         }
@@ -784,7 +787,7 @@ impl BytecodeEngine {
                                     expected_return_type,
                                     bytecode,
                                     mod_scope_id,
-                                    ctxt,
+                                    var_stack,
                                 );
                             }
 
@@ -811,7 +814,7 @@ impl BytecodeEngine {
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
-        ctxt: &mut Context,
+        var_stack: &mut VarStack,
     ) -> Ty {
         match stmt {
             Stmt::Semi(ref e, _) => {
@@ -820,7 +823,7 @@ impl BytecodeEngine {
                     expected_return_type,
                     bytecode,
                     current_scope_id,
-                    ctxt,
+                    var_stack,
                 );
                 Ty::Void
             }
@@ -829,7 +832,7 @@ impl BytecodeEngine {
                 expected_return_type,
                 bytecode,
                 current_scope_id,
-                ctxt,
+                var_stack,
             ),
             Stmt::Local(ref l) => {
                 let ident = match *l.pat {
@@ -843,12 +846,12 @@ impl BytecodeEngine {
                             expected_return_type,
                             bytecode,
                             current_scope_id,
-                            ctxt,
+                            var_stack,
                         );
 
                         match l.ty {
                             None => {
-                                let var_id = ctxt.add_var(ident, rhs_ty);
+                                let var_id = var_stack.add_var(ident, rhs_ty);
                                 bytecode.push(Bytecode::VarDecl(var_id));
                                 Ty::Void
                             }
@@ -861,7 +864,7 @@ impl BytecodeEngine {
                                     )
                                 }
 
-                                let var_id = ctxt.add_var(ident, var_ty);
+                                let var_id = var_stack.add_var(ident, var_ty);
                                 bytecode.push(Bytecode::VarDecl(var_id));
 
                                 Ty::Void
@@ -871,13 +874,13 @@ impl BytecodeEngine {
                     None => {
                         match l.ty {
                             None => {
-                                let var_id = ctxt.add_var(ident, Ty::Unknown);
+                                let var_id = var_stack.add_var(ident, Ty::Unknown);
                                 bytecode.push(Bytecode::VarDeclUninit(var_id));
                             }
                             Some(ref explicit_ty) => {
                                 let var_ty = self.resolve_type(&*explicit_ty.1);
 
-                                let var_id = ctxt.add_var(ident, var_ty);
+                                let var_id = var_stack.add_var(ident, var_ty);
                                 bytecode.push(Bytecode::VarDeclUninit(var_id));
                             }
                         }
@@ -896,10 +899,10 @@ impl BytecodeEngine {
         expected_return_type: &Ty,
         bytecode: &mut Vec<Bytecode>,
         parent: Option<ScopeId>,
-        ctxt: &mut Context,
+        var_stack: &mut VarStack,
     ) -> Ty {
         //TODO: there may be more efficient ways to do this, but this will do for now
-        let mut block_ctxt = ctxt.clone();
+        let mut block_var_stack = var_stack.clone();
         let mut return_ty = Ty::Void;
         self.scopes.push(Scope::new(parent, false));
         let current_scope_id = self.scopes.len() - 1;
@@ -918,11 +921,11 @@ impl BytecodeEngine {
                 &expected_return_type,
                 bytecode,
                 current_scope_id,
-                &mut block_ctxt,
+                &mut block_var_stack,
             );
         }
 
-        ctxt.vars = block_ctxt.vars;
+        var_stack.vars = block_var_stack.vars;
 
         return_ty
     }
@@ -940,7 +943,7 @@ impl BytecodeEngine {
                     ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
                 };
 
-                let mut ctxt = Context::new();
+                let mut var_stack = VarStack::new();
                 let mut params = vec![];
 
                 // process function params
@@ -951,7 +954,7 @@ impl BytecodeEngine {
                                 Pat::Ident(ref pi) => {
                                     let ident = pi.ident.to_string();
                                     let ty = self.resolve_type(&capture.ty);
-                                    let var_id = ctxt.add_var(ident.clone(), ty.clone());
+                                    let var_id = var_stack.add_var(ident.clone(), ty.clone());
                                     params.push(Param::new(ident, var_id, ty));
                                 }
                                 _ => {
@@ -968,7 +971,7 @@ impl BytecodeEngine {
                     &return_ty,
                     &mut bytecode,
                     Some(scope_id),
-                    &mut ctxt,
+                    &mut var_stack,
                 );
 
                 match block_ty {
@@ -987,7 +990,7 @@ impl BytecodeEngine {
                 Fun {
                     params,
                     return_ty,
-                    vars: ctxt.vars,
+                    vars: var_stack.vars,
                     bytecode,
                 }
             }

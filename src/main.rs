@@ -58,7 +58,7 @@ fn main() {
             use std::io::{stdin, stdout, Write};
 
             let mut bc = BytecodeEngine::new();
-            let mut context = bytecode::Context::new();
+            let mut var_stack = bytecode::VarStack::new();
             let mut var_lookup: HashMap<usize, usize> = HashMap::new();
             let mut value_stack: Vec<Value> = vec![];
             let mut show_type = false;
@@ -112,7 +112,7 @@ fn main() {
                             &bytecode::Ty::Unknown,
                             &mut bytecode,
                             0, // hardwire repl scope to 0
-                            &mut context,
+                            &mut var_stack,
                         );
 
                         if show_type {
@@ -150,7 +150,7 @@ fn main() {
                                     &bytecode::Ty::Unknown,
                                     &mut bytecode,
                                     0, // hardwire repl scope to 0
-                                    &mut context,
+                                    &mut var_stack,
                                 );
                                 if show_type {
                                     println!("type: {}", ty);
