@@ -160,13 +160,15 @@ pub enum DefinitionState {
 
 pub struct Scope {
     parent: Option<ScopeId>,
+    is_mod: bool,
     pub definitions: HashMap<String, DefinitionId>,
 }
 
 impl Scope {
-    fn new(parent: Option<ScopeId>) -> Scope {
+    fn new(parent: Option<ScopeId>, is_mod: bool) -> Scope {
         Scope {
             parent,
+            is_mod,
             definitions: HashMap::new(),
         }
     }
@@ -224,6 +226,7 @@ impl BytecodeEngine {
             scopes: vec![
                 Scope {
                     parent: None,
+                    is_mod: true,
                     definitions: HashMap::new(),
                 },
             ],
@@ -238,6 +241,12 @@ impl BytecodeEngine {
             .definitions
             .contains_key(defn_name)
         {
+            if self.scopes[current_scope_id].is_mod {
+                unimplemented!(
+                    "Definition {} not found in module (or needs ot be precomputed)",
+                    defn_name
+                );
+            }
             if let Some(parent_id) = self.scopes[current_scope_id].parent {
                 current_scope_id = parent_id;
             } else {
@@ -321,7 +330,7 @@ impl BytecodeEngine {
 
         if let DefinitionState::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id]
         {
-            self.scopes.push(Scope::new(Some(current_scope_id)));
+            self.scopes.push(Scope::new(Some(current_scope_id), true));
             let mod_scope_id = self.scopes.len() - 1;
 
             match item_mod.content {
@@ -727,7 +736,7 @@ impl BytecodeEngine {
                         Ty::Void
                     } else {
                         // If we're in a single ident path, check values in scope
-                        if ep.path.segments.len() == 1 {
+                        if ep.path.segments.len() == 1 && ep.path.leading_colon.is_none() {
                             let ident = ep.path.segments[0].ident;
                             let var_result = ctxt.find_var(ident.as_ref());
                             if let Some(var_id) = var_result {
@@ -740,6 +749,16 @@ impl BytecodeEngine {
                         }
 
                         let mut mod_scope_id = current_scope_id;
+                        if ep.path.leading_colon.is_some() {
+                            loop {
+                                if let Some(parent_id) = self.scopes[mod_scope_id].parent {
+                                    mod_scope_id = parent_id;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
                         let num_segments = ep.path.segments.len();
 
                         for current_segment in 0..(num_segments - 1) {
@@ -877,7 +896,7 @@ impl BytecodeEngine {
         //TODO: there may be more efficient ways to do this, but this will do for now
         let mut block_ctxt = ctxt.clone();
         let mut return_ty = Ty::Void;
-        self.scopes.push(Scope::new(parent));
+        self.scopes.push(Scope::new(parent, false));
         let current_scope_id = self.scopes.len() - 1;
 
         for stmt in &block.stmts {

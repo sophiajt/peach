@@ -264,6 +264,16 @@ mod tests {
     }
 
     #[test]
+    fn test_mod05() {
+        run_test("test_files/mod05.rs", "DEBUG: U64(7)", "DEBUG: 7");
+    }
+
+    #[test]
+    fn test_mod_bad01() {
+        run_bad_test("test_files/mod_bad01.rs", "not found in module");
+    }
+
+    #[test]
     fn test_scope01() {
         run_test("test_files/scope01.rs", "DEBUG: U64(3)", "DEBUG: 3");
     }
