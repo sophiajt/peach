@@ -20,12 +20,15 @@ Some possible next steps:
 * (DONE) while
 * (DONE) Playing with the while codegen, I'm noticing we could codegen a bit smarter.  Expressions could come out with paren'd strings inside of other expressions.  Assignments and the like would cap off the codegen.
 * (DONE) if expressions
+* (IN PROGRESS) mod
+*   TODO: mod visibility
+*   TODO: correct mod scope traversal
+*   TODO: leading colon
 * TODO: mutability check
 * TODO: consistent naming
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)
 
-Feels like mod wants to come next
 We could also start a non-lazy mode that's parallel
   * basically: each Item would be done in parallel.  If you hit a definition you don't have (which is another Item), then
     you delay yourself with that as the Requirement.  Periodically we flush the enqueued Item tasks and look for ones whose

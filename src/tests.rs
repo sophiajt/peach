@@ -264,6 +264,21 @@ mod tests {
     }
 
     #[test]
+    fn test_scope01() {
+        run_test("test_files/scope01.rs", "DEBUG: U64(3)", "DEBUG: 3");
+    }
+
+    #[test]
+    fn test_scope02() {
+        run_test("test_files/scope02.rs", "DEBUG: U64(2)", "DEBUG: 2");
+    }
+
+    #[test]
+    fn test_scope_bad01() {
+        run_bad_test("test_files/scope_bad01.rs", "Can not call function");
+    }
+
+    #[test]
     fn test_while01() {
         run_test("test_files/while01.rs", "DEBUG: U64(10)", "DEBUG: 10");
     }

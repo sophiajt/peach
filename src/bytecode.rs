@@ -108,13 +108,14 @@ impl Context {
         pos
     }
 
-    fn find_var(&self, ident: &String) -> usize {
+    //TODO: this probably should be a Result in the future
+    fn find_var(&self, ident: &str) -> Option<usize> {
         for var in self.scope.iter().rev() {
             if ident == &self.vars[*var].ident {
-                return *var;
+                return Some(*var);
             }
         }
-        unimplemented!("Could not find variable: {}", ident);
+        None
     }
 }
 
@@ -437,6 +438,13 @@ impl BytecodeEngine {
                 current_scope_id,
                 ctxt,
             ),
+            Expr::Block(eb) => self.convert_block_to_bytecode(
+                &eb.block,
+                expected_return_type,
+                bytecode,
+                Some(current_scope_id),
+                ctxt,
+            ),
             Expr::Assign(ea) => {
                 let rhs_type = self.convert_expr_to_bytecode(
                     &*ea.right,
@@ -451,6 +459,10 @@ impl BytecodeEngine {
                         let ident = ep.path.segments[0].ident.to_string();
 
                         let var_id = ctxt.find_var(&ident);
+                        if var_id.is_none() {
+                            unimplemented!("Could not find variable: {}", ident);
+                        }
+                        let var_id = var_id.unwrap();
                         let var = &mut ctxt.vars[var_id];
 
                         if assignment_compatible(&var.ty, &rhs_type) {
@@ -687,6 +699,10 @@ impl BytecodeEngine {
                 let ident = ep.path.segments[0].ident.to_string();
 
                 let var_id = ctxt.find_var(&ident);
+                if var_id.is_none() {
+                    unimplemented!("Could not find {}", ident);
+                }
+                let var_id = var_id.unwrap();
                 let var = &ctxt.vars[var_id];
 
                 if var.ty == Ty::Unknown {
@@ -710,6 +726,19 @@ impl BytecodeEngine {
                         bytecode.push(Bytecode::DebugPrint);
                         Ty::Void
                     } else {
+                        // If we're in a single ident path, check values in scope
+                        if ep.path.segments.len() == 1 {
+                            let ident = ep.path.segments[0].ident;
+                            let var_result = ctxt.find_var(ident.as_ref());
+                            if let Some(var_id) = var_result {
+                                //TODO: FIXME: in the future check this for lambda
+                                unimplemented!(
+                                    "Can not call function on type {:?}",
+                                    ctxt.vars[var_id].ty
+                                );
+                            }
+                        }
+
                         let mut mod_scope_id = current_scope_id;
                         let num_segments = ep.path.segments.len();
 
