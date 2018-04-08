@@ -154,8 +154,8 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
             }
-            Bytecode::Call(scope_id, fn_name) => {
-                let (_, fun) = bc.get_fn(*scope_id, fn_name);
+            Bytecode::Call(fn_name, scope_id) => {
+                let fun = bc.get_fn(fn_name, *scope_id);
                 let mut expr_string = String::new();
 
                 expr_string += &format!("{}_{}(", fn_name, scope_id);

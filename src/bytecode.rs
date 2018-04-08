@@ -23,7 +23,7 @@ pub enum Bytecode {
     VarDeclUninit(VarId),
     Var(VarId),
     Assign(VarId),
-    Call(ScopeId, String),
+    Call(String, ScopeId),
     If(Offset, Ty), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
     Else(Offset, Ty), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
     EndIf(Ty),        //includes the type of the result, if this is an expression
@@ -140,19 +140,19 @@ impl Mod {
 type ScopeId = usize;
 type DefinitionId = usize;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Lazy {
     ItemFn(ItemFn),
     ItemMod(ItemMod),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Processed {
     Fun(Fun),
     Mod(Mod),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DefinitionState {
     Lazy(Lazy),
     Processed(Processed),
@@ -234,8 +234,8 @@ impl BytecodeEngine {
         }
     }
 
-    fn get_defn(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &DefinitionState) {
-        let mut current_scope_id = scope_id;
+    fn get_defn(&self, defn_name: &str, starting_scope_id: ScopeId) -> (DefinitionId, ScopeId) {
+        let mut current_scope_id = starting_scope_id;
 
         while !self.scopes[current_scope_id]
             .definitions
@@ -255,27 +255,29 @@ impl BytecodeEngine {
         }
 
         (
+            self.scopes[current_scope_id].definitions[defn_name],
             current_scope_id,
-            &self.definitions[self.scopes[current_scope_id].definitions[defn_name]],
         )
     }
 
     // Gets the bytecoded function for the given name
-    pub fn get_fn(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &Fun) {
-        let (current_scope_id, defn) = self.get_defn(scope_id, defn_name);
+    pub fn get_fn(&self, defn_name: &str, scope_id: ScopeId) -> &Fun {
+        let (defn_id, _) = self.get_defn(defn_name, scope_id);
+        let defn = &self.definitions[defn_id];
 
         if let DefinitionState::Processed(Processed::Fun(ref p)) = defn {
-            (current_scope_id, p)
+            p
         } else {
-            unimplemented!("Function {} needs to be precomputed", defn_name)
+            unimplemented!("Function {:?} needs to be precomputed", defn)
         }
     }
 
-    fn get_mod(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &Mod) {
-        let (current_scope_id, defn) = self.get_defn(scope_id, defn_name);
+    fn get_mod(&self, defn_name: &str, scope_id: ScopeId) -> &Mod {
+        let (defn_id, _) = self.get_defn(defn_name, scope_id);
+        let defn = &self.definitions[defn_id];
 
         if let DefinitionState::Processed(Processed::Mod(ref p)) = defn {
-            (current_scope_id, p)
+            p
         } else {
             unimplemented!("Module {} needs to be precomputed", defn_name)
         }
@@ -301,11 +303,13 @@ impl BytecodeEngine {
         }
     }
 
-    pub fn process_fn(&mut self, scope_id: ScopeId, fn_name: &str) {
-        let fun = self.convert_fn_to_bytecode(scope_id, fn_name);
+    pub fn process_fn(&mut self, scope_id: ScopeId, fn_name: &str) -> (DefinitionId, ScopeId) {
+        let (definition_id, found_scope_id) = self.get_defn(fn_name, scope_id);
 
-        let definition_id = self.scopes[scope_id].definitions[fn_name];
+        let fun = self.convert_fn_to_bytecode(definition_id, found_scope_id);
         self.definitions[definition_id] = DefinitionState::Processed(Processed::Fun(fun));
+
+        (definition_id, found_scope_id)
     }
 
     fn process_mod(&mut self, scope_id: ScopeId, mod_name: &str) {
@@ -761,34 +765,38 @@ impl BytecodeEngine {
                         for current_segment in 0..(num_segments - 1) {
                             let ident = ep.path.segments[current_segment].ident.as_ref();
                             self.process_mod(mod_scope_id, ident);
-                            let (_, module) = self.get_mod(mod_scope_id, ident);
+                            let module = self.get_mod(ident, mod_scope_id);
                             mod_scope_id = module.scope_id;
                         }
 
                         // let's find our way to the function
                         let ident = ep.path.segments[num_segments - 1].ident.to_string();
 
-                        let (fn_scope_id, _) = self.get_defn(mod_scope_id, &ident);
+                        let (definition_id, scope_id) = self.process_fn(mod_scope_id, &ident);
+                        if let DefinitionState::Processed(Processed::Fun(ref target_fn)) =
+                            self.definitions[definition_id]
+                        {
+                            let return_ty = target_fn.return_ty.clone();
 
-                        self.process_fn(fn_scope_id, &ident);
+                            for arg in &ec.args {
+                                self.convert_expr_to_bytecode(
+                                    arg,
+                                    expected_return_type,
+                                    bytecode,
+                                    mod_scope_id,
+                                    ctxt,
+                                );
+                            }
 
-                        let (scope_id, target_fn) = self.get_fn(mod_scope_id, &ident);
+                            bytecode.push(Bytecode::Call(ident, scope_id));
 
-                        let return_ty = target_fn.return_ty.clone();
-
-                        for arg in &ec.args {
-                            self.convert_expr_to_bytecode(
-                                arg,
-                                expected_return_type,
-                                bytecode,
-                                mod_scope_id,
-                                ctxt,
+                            return_ty
+                        } else {
+                            unimplemented!(
+                                "Processed function {} did not process correctly",
+                                ident
                             );
                         }
-
-                        bytecode.push(Bytecode::Call(scope_id, ident));
-
-                        return_ty
                     }
                 }
                 _ => unimplemented!("unknown function call type: {:#?}", ec.func),
@@ -919,8 +927,8 @@ impl BytecodeEngine {
         return_ty
     }
 
-    fn convert_fn_to_bytecode(&mut self, scope_id: ScopeId, fn_name: &str) -> Fun {
-        let defn_state = self.definitions[self.scopes[scope_id].definitions[fn_name]].clone();
+    fn convert_fn_to_bytecode(&mut self, definition_id: DefinitionId, scope_id: ScopeId) -> Fun {
+        let defn_state = self.definitions[definition_id].clone();
 
         match defn_state {
             DefinitionState::Processed(Processed::Fun(fun)) => fun.clone(),
@@ -983,7 +991,7 @@ impl BytecodeEngine {
                     bytecode,
                 }
             }
-            _ => unimplemented!("Could not find function for {}", fn_name),
+            _ => unimplemented!("Could not find function"),
         }
     }
 }
