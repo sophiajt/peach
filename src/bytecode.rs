@@ -272,8 +272,6 @@ impl BytecodeEngine {
     }
 
     fn get_mod(&self, scope_id: ScopeId, defn_name: &str) -> (ScopeId, &Mod) {
-        //TODO: FIXME: This will look backward instead of staying in the same scope
-        //I think to fix this, we just need to set up parents correctly
         let (current_scope_id, defn) = self.get_defn(scope_id, defn_name);
 
         if let DefinitionState::Processed(Processed::Mod(ref p)) = defn {
@@ -313,7 +311,6 @@ impl BytecodeEngine {
     fn process_mod(&mut self, scope_id: ScopeId, mod_name: &str) {
         let definition_id;
         let mut current_scope_id = scope_id;
-        //TODO: FIXME: we should sometimes not backtrack like this through the scopes
         loop {
             if self.scopes[current_scope_id]
                 .definitions
