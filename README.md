@@ -22,8 +22,13 @@ Some possible next steps:
 * (DONE) if expressions
 * (IN PROGRESS) mod
 *   TODO: mod visibility
-*   TODO: correct mod scope traversal
-*   TODO: leading colon
+*   DONE: correct mod scope traversal
+*   DONE: leading colon
+* (DONE) 'use' items
+* (DONE) mod "file":
+  * (DONE) Noticed that if this is added, you can load files froms of code from the repl
+
+* All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
 * TODO: mutability check
 * TODO: consistent naming
 * Add structs and member access

@@ -4,8 +4,7 @@ extern crate time;
 
 use std::collections::HashMap;
 
-use std::fs::File;
-use std::io::Read;
+use std::path::Path;
 
 mod bytecode;
 mod compile;
@@ -16,15 +15,13 @@ use bytecode::{Bytecode, BytecodeEngine};
 use eval::{eval_block_bytecode, Value};
 
 fn process(fname: &str, start_fn: &str) -> BytecodeEngine {
-    let mut file = File::open(fname).expect("Unable to open file");
-
-    let mut src = String::new();
-    file.read_to_string(&mut src).expect("Unable to read file");
-
     let mut bc = BytecodeEngine::new();
 
     // Step 1: Load up the parsed file so that we can lazily convert it
-    bc.load_file(&src);
+    //TODO: FIXME: we should probably take &str or Path
+    let path = Path::new(fname).canonicalize().unwrap();
+    bc.set_project_root(path.parent().unwrap().to_str().unwrap());
+    bc.load_file(path.file_name().unwrap().to_str().unwrap());
 
     // Step 2: Convert to bytecode from the given location
     // We assume the starting function is found in scope 0, the starting scope
@@ -63,6 +60,9 @@ fn main() {
             let mut value_stack: Vec<Value> = vec![];
             let mut show_type = false;
             let mut show_bytecode = false;
+
+            //TODO: FIXME: don't hardcode this
+            bc.set_project_root("test_files");
 
             println!("madness repl (:h for help, :q to quit)");
             loop {
@@ -145,26 +145,34 @@ fn main() {
                         let result = syn::parse_str::<syn::Stmt>(&input);
                         match result {
                             Ok(result) => {
-                                let ty = bc.convert_stmt_to_bytecode(
-                                    &result,
-                                    &bytecode::Ty::Unknown,
-                                    &mut bytecode,
-                                    0, // hardwire repl scope to 0
-                                    &mut var_stack,
-                                );
-                                if show_type {
-                                    println!("type: {}", ty);
+                                //TODO: FIXME: we should probably have something that can handle items *and* stmts for the repl
+                                match result {
+                                    syn::Stmt::Item(item) => {
+                                        bc.prepare_item(item, 0);
+                                    }
+                                    _ => {
+                                        let ty = bc.convert_stmt_to_bytecode(
+                                            &result,
+                                            &bytecode::Ty::Unknown,
+                                            &mut bytecode,
+                                            0, // hardwire repl scope to 0
+                                            &mut var_stack,
+                                        );
+                                        if show_type {
+                                            println!("type: {}", ty);
+                                        }
+                                        if show_bytecode {
+                                            println!("bytecode: {:?}", bytecode);
+                                        }
+                                        eval_block_bytecode(
+                                            &bc,
+                                            &bytecode,
+                                            &mut var_lookup,
+                                            &mut value_stack,
+                                            &mut None,
+                                        );
+                                    }
                                 }
-                                if show_bytecode {
-                                    println!("bytecode: {:?}", bytecode);
-                                }
-                                eval_block_bytecode(
-                                    &bc,
-                                    &bytecode,
-                                    &mut var_lookup,
-                                    &mut value_stack,
-                                    &mut None,
-                                );
                             }
                             Err(e) => {
                                 println!("Error: {:?}", e);

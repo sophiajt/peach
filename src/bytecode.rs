@@ -174,11 +174,6 @@ impl Scope {
     }
 }
 
-pub struct BytecodeEngine {
-    pub scopes: Vec<Scope>,
-    pub definitions: Vec<DefinitionState>,
-}
-
 fn operator_compatible(lhs: &Ty, rhs: &Ty) -> bool {
     match (lhs, rhs) {
         (Ty::U64, Ty::U64)
@@ -220,6 +215,12 @@ fn tighter_of_types(lhs: &Ty, rhs: &Ty) -> Ty {
     }
 }
 
+pub struct BytecodeEngine {
+    pub scopes: Vec<Scope>,
+    pub definitions: Vec<DefinitionState>,
+    pub project_root: Option<::std::path::PathBuf>,
+}
+
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
         BytecodeEngine {
@@ -231,6 +232,7 @@ impl BytecodeEngine {
                 },
             ],
             definitions: vec![],
+            project_root: None,
         }
     }
 
@@ -275,23 +277,112 @@ impl BytecodeEngine {
         }
     }
 
-    pub fn load_file(&mut self, src: &String) {
+    pub fn set_project_root(&mut self, path: &str) {
+        use std::fs;
+
+        let path = fs::canonicalize(path).unwrap();
+
+        self.project_root = Some(path);
+    }
+
+    pub fn prepare_item(&mut self, item: Item, current_scope_id: ScopeId) {
+        use std::fs::File;
+        use std::io::Read;
+
+        match item {
+            Item::Fn(item_fn) => {
+                let fn_name = item_fn.ident.to_string();
+                self.add_lazy_fn(fn_name, current_scope_id, item_fn);
+            }
+            Item::Mod(item_mod) => {
+                //TODO: FIXME: this probably wants to be refactored (since it's shared with block)
+                if item_mod.content.is_none() {
+                    //Load the file as a module
+                    let fname = item_mod.ident.as_ref();
+                    let path = if let Some(ref project_path) = self.project_root {
+                        let mut temp_path = project_path.clone();
+                        temp_path.push(fname);
+                        temp_path.set_extension("rs");
+                        temp_path
+                    } else {
+                        let mut temp_path = ::std::path::PathBuf::new();
+                        temp_path.push(fname);
+                        temp_path.set_extension("rs");
+                        temp_path
+                    };
+
+                    let mut file = File::open(path).expect("Unable to open file");
+
+                    let mut src = String::new();
+                    file.read_to_string(&mut src).expect("Unable to read file");
+
+                    let syntax_file = syn::parse_file(&src).expect("Unable to parse file");
+                    self.scopes.push(Scope::new(None, true));
+                    let mod_scope_id = self.scopes.len() - 1;
+
+                    self.definitions
+                        .push(DefinitionState::Processed(Processed::Mod(Mod::new(
+                            mod_scope_id,
+                        ))));
+
+                    self.scopes[current_scope_id]
+                        .definitions
+                        .insert(item_mod.ident.to_string(), self.definitions.len() - 1);
+
+                    for item in syntax_file.items {
+                        self.prepare_item(item, mod_scope_id);
+                    }
+                } else {
+                    let mod_name = item_mod.ident.to_string();
+                    self.add_lazy_mod(mod_name, current_scope_id, item_mod);
+                }
+            }
+            Item::Use(ref item_use) => {
+                // Use seems to start higher up in the scopes, so start higher
+                let mut temp_scope_id = current_scope_id;
+
+                loop {
+                    //TODO: FIXME: not sure if this is correct
+                    if self.scopes[temp_scope_id].is_mod {
+                        break;
+                    }
+                    if let Some(parent_id) = self.scopes[temp_scope_id].parent {
+                        temp_scope_id = parent_id;
+                    } else {
+                        break;
+                    }
+                }
+
+                self.process_use_tree(&item_use.tree, current_scope_id, temp_scope_id);
+            }
+            _ => {
+                unimplemented!("Unknown item type: {:#?}", item);
+            }
+        }
+    }
+
+    pub fn load_file(&mut self, fname: &str) {
+        use std::fs::File;
+        use std::io::Read;
+        let path = if let Some(ref project_path) = self.project_root {
+            let mut temp_path = project_path.clone();
+            temp_path.push(fname);
+            temp_path
+        } else {
+            let mut temp_path = ::std::path::PathBuf::new();
+            temp_path.push(fname);
+            temp_path
+        };
+
+        let mut file = File::open(path).expect("Unable to open file");
+
+        let mut src = String::new();
+        file.read_to_string(&mut src).expect("Unable to read file");
+
         let syntax_file = syn::parse_file(&src).expect("Unable to parse file");
 
         for item in syntax_file.items {
-            match item {
-                Item::Fn(item_fn) => {
-                    let fn_name = item_fn.ident.to_string();
-                    self.add_lazy_fn(fn_name, 0, item_fn);
-                }
-                Item::Mod(item_mod) => {
-                    let mod_name = item_mod.ident.to_string();
-                    self.add_lazy_mod(mod_name, 0, item_mod);
-                }
-                _ => {
-                    unimplemented!("Unknown item type: {:#?}", item);
-                }
-            }
+            self.prepare_item(item, 0);
         }
     }
 
@@ -331,17 +422,7 @@ impl BytecodeEngine {
             match item_mod.content {
                 //TODO: would be great if we didn't clone here and just reused what we had
                 Some(ref content) => for item in content.1.clone() {
-                    match item {
-                        Item::Fn(item_fn) => {
-                            let fn_name = item_fn.ident.to_string();
-                            self.add_lazy_fn(fn_name, mod_scope_id, item_fn);
-                        }
-                        Item::Mod(item_mod) => {
-                            let mod_name = item_mod.ident.to_string();
-                            self.add_lazy_mod(mod_name, mod_scope_id, item_mod);
-                        }
-                        _ => unimplemented!("Unsupport item type in module"),
-                    }
+                    self.prepare_item(item, mod_scope_id);
                 },
                 None => {}
             }
@@ -965,39 +1046,7 @@ impl BytecodeEngine {
 
         for stmt in &block.stmts {
             if let Stmt::Item(ref item) = stmt {
-                match item {
-                    Item::Fn(ref item_fn) => {
-                        self.add_lazy_fn(
-                            item_fn.ident.to_string(),
-                            current_scope_id,
-                            item_fn.clone(),
-                        );
-                    }
-                    Item::Mod(ref item_mod) => self.add_lazy_mod(
-                        item_mod.ident.to_string(),
-                        current_scope_id,
-                        item_mod.clone(),
-                    ),
-                    Item::Use(ref item_use) => {
-                        // Use seems to start higher up in the scopes, so start higher
-                        let mut temp_scope_id = current_scope_id;
-
-                        loop {
-                            //TODO: FIXME: not sure if this is correct
-                            if self.scopes[temp_scope_id].is_mod {
-                                break;
-                            }
-                            if let Some(parent_id) = self.scopes[temp_scope_id].parent {
-                                temp_scope_id = parent_id;
-                            } else {
-                                break;
-                            }
-                        }
-
-                        self.process_use_tree(&item_use.tree, current_scope_id, temp_scope_id);
-                    }
-                    _ => unimplemented!("Unsupported item type: {:?}", item),
-                }
+                self.prepare_item(item.clone(), current_scope_id);
             }
         }
 
