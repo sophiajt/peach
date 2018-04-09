@@ -1,8 +1,16 @@
 [package]
-name = "madness"
+name = "peach"
 version = "0.1.0"
 authors = ["Jonathan Turner <jonathan.d.turner@gmail.com>"]
 
 [dependencies]
 syn = {version = "0.13", features = ["full", "extra-traits"] }
 time = "*"
+
+[lib]
+name = "peachlib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "peach"
+path = "src/bin.rs"

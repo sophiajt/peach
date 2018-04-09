@@ -1,5 +1,6 @@
-use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Processed, Ty};
+use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Processed};
 use time::PreciseTime;
+use typecheck::Ty;
 
 struct CFile {
     output_src: String,
@@ -280,7 +281,9 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     cfile.output_src
 }
 
-pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Result<String> {
+/// Compiles the project's bytecode to a give name.  
+/// Returns the location of the compiled binary.
+pub fn compile_bytecode(bc: &BytecodeEngine, output_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
     //println!("{}", output);
 
@@ -289,11 +292,11 @@ pub fn compile_bytecode(bc: &BytecodeEngine, input_fname: &str) -> ::std::io::Re
         use std::io::prelude::*;
         use std::path::Path;
 
-        let input_path = Path::new(input_fname);
+        let output_path = Path::new(output_fname);
 
         let dir = ::std::env::temp_dir();
         let path = Path::new(&dir)
-            .join(input_path.file_name().unwrap())
+            .join(output_path.file_name().unwrap())
             .with_extension("c");
         let mut file =
             File::create(path.clone()).expect(&format!("Can not create {:?} for output", path));
