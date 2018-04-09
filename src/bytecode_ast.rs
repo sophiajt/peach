@@ -111,7 +111,7 @@ impl BytecodeEngine {
         return_ty
     }
 
-    pub(crate) fn convert_stmt_to_bytecode(
+    pub fn convert_stmt_to_bytecode(
         &mut self,
         stmt: &Stmt,
         expected_return_type: &Ty,
@@ -196,7 +196,7 @@ impl BytecodeEngine {
         }
     }
 
-    pub(crate) fn convert_expr_to_bytecode(
+    pub fn convert_expr_to_bytecode(
         &mut self,
         expr: &Expr,
         expected_return_type: &Ty,

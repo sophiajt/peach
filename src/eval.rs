@@ -199,6 +199,7 @@ fn eval_fn_bytecode(
     )
 }
 
+/// Begin evaluating the bytecode starting at the given function name.  Optionally, capture the debug output for later use.
 pub fn eval_engine(
     bc: &BytecodeEngine,
     starting_fn_name: &str,

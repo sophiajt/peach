@@ -59,7 +59,7 @@ impl VarDecl {
 }
 
 #[derive(Clone)]
-pub(crate) struct VarStack {
+pub struct VarStack {
     var_stack: Vec<usize>,
     pub(crate) vars: Vec<VarDecl>,
 }
@@ -145,6 +145,21 @@ impl Scope {
     }
 }
 
+/// BytecodeEngine is the root of Peach's work.  Here code is converted from source files to an intermediate bytecode format
+/// First, the file is parsed into an AST.  Once an AST, further computation is delayed until definitions are required.
+/// This allows conversion from AST to definitions to happen lazily.
+///
+/// No processing is done by default.  Once a file is loaded, you must then process the file by giving a function name to begin with.
+/// Eg)
+/// ```no_run
+/// extern crate peachlib;
+/// use peachlib::BytecodeEngine;
+///
+/// let mut bc = BytecodeEngine::new();
+/// bc.load_file("bin.rs");
+/// bc.process_fn("main", 0);
+/// ```
+/// Processing is done on function granularity.  As definitions are referenced in the function, they too are processed.
 pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) definitions: Vec<DefinitionState>,
@@ -331,6 +346,8 @@ impl BytecodeEngine {
         }
     }
 
+    /// Begin processing the lazy definitions starting at the given function.
+    /// This will continue processing until all necessary definitions have been processed.
     pub fn process_fn(&mut self, fn_name: &str, scope_id: ScopeId) -> DefinitionId {
         let (definition_id, found_scope_id) = self.get_defn(fn_name, scope_id);
 
@@ -465,6 +482,60 @@ impl BytecodeEngine {
                     .definitions
                     .insert(use_rename.rename.to_string(), definition_id);
             }
+        }
+    }
+
+    /// immediately process a string into bytecode, treating it as an expression
+    /// this is likely only useful for building REPLs
+    pub fn process_raw_expr_str(
+        &mut self,
+        expr_str: &str,
+        bytecode: &mut Vec<Bytecode>,
+        var_stack: &mut VarStack,
+    ) -> Result<Ty, String> {
+        match syn::parse_str::<syn::Expr>(expr_str) {
+            Ok(expr) => {
+                Ok(self.convert_expr_to_bytecode(
+                    &expr,
+                    &Ty::Unknown,
+                    bytecode,
+                    0, // hardwire repl scope to 0
+                    var_stack,
+                ))
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// immediately process a string into bytecode, treating it as a statement
+    /// this will also process items so that their definitions are in scope
+    /// this is likely only useful for building REPLs
+    pub fn process_raw_stmt_str(
+        &mut self,
+        expr_str: &str,
+        bytecode: &mut Vec<Bytecode>,
+        var_stack: &mut VarStack,
+    ) -> Result<(), String> {
+        match syn::parse_str::<syn::Stmt>(expr_str) {
+            Ok(stmt) => {
+                match stmt {
+                    syn::Stmt::Item(item) => {
+                        self.prepare_item(item, 0);
+                        Ok(())
+                    }
+                    _ => {
+                        self.convert_stmt_to_bytecode(
+                            &stmt,
+                            &Ty::Unknown,
+                            bytecode,
+                            0, // hardwire repl scope to 0
+                            var_stack,
+                        );
+                        Ok(())
+                    }
+                }
+            }
+            Err(e) => Err(e.to_string()),
         }
     }
 }

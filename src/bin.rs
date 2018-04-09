@@ -6,9 +6,110 @@
 //!   * "repl" - creates a repl to interact with the code directly
 
 extern crate peachlib;
-use peachlib::{compile_bytecode, eval_engine, repl, BytecodeEngine};
+extern crate syn;
 
+use peachlib::{compile_bytecode, eval_block_bytecode, eval_engine, Bytecode, BytecodeEngine,
+               Value, VarStack};
+
+use std::collections::HashMap;
 use std::path::Path;
+
+/// Run a peach repl on the commandline.
+pub fn repl() {
+    use std::io::{stdin, stdout, Write};
+
+    let mut bc = BytecodeEngine::new();
+    let mut var_stack = VarStack::new();
+    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
+    let mut value_stack: Vec<Value> = vec![];
+    let mut show_type = false;
+    let mut show_bytecode = false;
+
+    //TODO: FIXME: don't hardcode this
+    bc.set_project_root("test_files");
+
+    println!("peach repl (:h for help, :q to quit)");
+    loop {
+        let mut bytecode: Vec<Bytecode> = vec![];
+        let mut input = String::new();
+
+        print!("> ");
+        let _ = stdout().flush();
+        stdin().read_line(&mut input).expect("Could not read input");
+        input = input.trim().to_string();
+
+        if input == ":quit" || input == ":q" {
+            break;
+        }
+
+        if input == ":type" || input == ":t" {
+            show_type ^= true;
+            println!("show type: {}", show_type);
+            continue;
+        }
+
+        if input == ":bytecode" || input == ":b" {
+            show_bytecode ^= true;
+            println!("show bytecode: {}", show_bytecode);
+            continue;
+        }
+
+        if input == ":stack" || input == ":s" {
+            println!("{:?}", value_stack);
+            continue;
+        }
+
+        if input == ":help" || input == ":h" {
+            println!(":h(elp) - print this help message");
+            println!(":t(ype) - print the result type");
+            println!(":b(ytecode) - print the bytecode");
+            println!(":s(tack) - print the contents of the stack");
+            println!(":q(uit) - quit repl");
+            continue;
+        }
+
+        if let Ok(ty) = bc.process_raw_expr_str(&input, &mut bytecode, &mut var_stack) {
+            if show_type {
+                println!("type: {}", ty);
+            }
+            if show_bytecode {
+                println!("bytecode: {:?}", bytecode);
+            }
+            eval_block_bytecode(&bc, &bytecode, &mut var_lookup, &mut value_stack, &mut None);
+
+            // This funny little trick should, in theory, let us pop off temporaries without popping off our variables
+            let last = if value_stack.len() > var_lookup.len() {
+                value_stack.pop().unwrap()
+            } else {
+                value_stack.last().unwrap().clone()
+            };
+
+            println!("{}", last);
+        } else {
+            if input.chars().rev().next() != Some(';') {
+                input.push(';');
+            }
+
+            match bc.process_raw_stmt_str(&input, &mut bytecode, &mut var_stack) {
+                Ok(_) => {
+                    if show_bytecode {
+                        println!("bytecode: {:?}", bytecode);
+                    }
+                    eval_block_bytecode(
+                        &bc,
+                        &bytecode,
+                        &mut var_lookup,
+                        &mut value_stack,
+                        &mut None,
+                    );
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                }
+            }
+        }
+    }
+}
 
 fn process(fname: &str, start_fn: &str) -> BytecodeEngine {
     let mut bc = BytecodeEngine::new();

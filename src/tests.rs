@@ -2,11 +2,11 @@
 mod tests {
     use std::process::Command;
 
-    //use super::*;
     use bytecode::BytecodeEngine;
     use compile;
     use eval;
 
+    #[allow(dead_code)]
     fn load_to_bc(fname: &str) -> BytecodeEngine {
         let mut bc = BytecodeEngine::new();
 
@@ -21,6 +21,7 @@ mod tests {
         bc
     }
 
+    #[allow(dead_code)]
     fn run_test(fname: &str, eval_expect: &str, compile_expect: &str) {
         let bc = load_to_bc(fname);
 
@@ -41,6 +42,7 @@ mod tests {
         assert_eq!(test_output.trim(), compile_expect);
     }
 
+    #[allow(dead_code)]
     fn run_bad_test(fname: &str, expected_error_msg: &str) {
         use std::panic;
 
