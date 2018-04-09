@@ -896,6 +896,59 @@ impl BytecodeEngine {
         }
     }
 
+    fn process_use_tree(
+        &mut self,
+        use_tree: &syn::UseTree,
+        original_scope_id: ScopeId,
+        current_scope_id: ScopeId,
+    ) {
+        match use_tree {
+            syn::UseTree::Name(ref use_name) => {
+                let definition_id = self.process_defn(use_name.ident.as_ref(), current_scope_id);
+
+                self.scopes[original_scope_id]
+                    .definitions
+                    .insert(use_name.ident.to_string(), definition_id);
+            }
+            syn::UseTree::Path(ref use_path) => {
+                let definition_id = self.process_mod(use_path.ident.as_ref(), current_scope_id);
+                if let DefinitionState::Processed(Processed::Mod(ref module)) =
+                    self.definitions[definition_id]
+                {
+                    self.process_use_tree(&*use_path.tree, original_scope_id, module.scope_id);
+                } else {
+                    unimplemented!("Expected module in use path");
+                }
+            }
+            syn::UseTree::Group(ref use_group) => {
+                for tree in &use_group.items {
+                    self.process_use_tree(tree, original_scope_id, current_scope_id);
+                }
+            }
+            syn::UseTree::Glob(_) => {
+                let mut defn_names = vec![];
+                for defn_name in self.scopes[current_scope_id].definitions.keys() {
+                    defn_names.push(defn_name.clone());
+                }
+
+                for defn_name in defn_names {
+                    let definition_id = self.process_defn(&defn_name, current_scope_id);
+
+                    self.scopes[original_scope_id]
+                        .definitions
+                        .insert(defn_name, definition_id);
+                }
+            }
+            syn::UseTree::Rename(ref use_rename) => {
+                let definition_id = self.process_defn(use_rename.ident.as_ref(), current_scope_id);
+
+                self.scopes[original_scope_id]
+                    .definitions
+                    .insert(use_rename.rename.to_string(), definition_id);
+            }
+        }
+    }
+
     fn convert_block_to_bytecode(
         &mut self,
         block: &Block,
@@ -926,11 +979,11 @@ impl BytecodeEngine {
                         item_mod.clone(),
                     ),
                     Item::Use(ref item_use) => {
-                        let mut current = &item_use.tree;
+                        // Use seems to start higher up in the scopes, so start higher
                         let mut temp_scope_id = current_scope_id;
 
                         loop {
-                            println!("Use walking through: {}", temp_scope_id);
+                            //TODO: FIXME: not sure if this is correct
                             if self.scopes[temp_scope_id].is_mod {
                                 break;
                             }
@@ -941,38 +994,7 @@ impl BytecodeEngine {
                             }
                         }
 
-                        loop {
-                            match current {
-                                syn::UseTree::Name(ref use_name) => {
-                                    let definition_id =
-                                        self.process_defn(use_name.ident.as_ref(), temp_scope_id);
-
-                                    println!(
-                                        "Putting {} {} in at {}",
-                                        use_name.ident.as_ref(),
-                                        definition_id,
-                                        current_scope_id
-                                    );
-                                    self.scopes[current_scope_id]
-                                        .definitions
-                                        .insert(use_name.ident.to_string(), definition_id);
-                                    break;
-                                }
-                                syn::UseTree::Path(ref use_path) => {
-                                    let definition_id =
-                                        self.process_mod(use_path.ident.as_ref(), temp_scope_id);
-                                    if let DefinitionState::Processed(Processed::Mod(ref module)) =
-                                        self.definitions[definition_id]
-                                    {
-                                        temp_scope_id = module.scope_id;
-                                        current = &*use_path.tree;
-                                    } else {
-                                        unimplemented!("Expected module in use path");
-                                    }
-                                }
-                                _ => unimplemented!("Unsupport 'use' tree type"),
-                            }
-                        }
+                        self.process_use_tree(&item_use.tree, current_scope_id, temp_scope_id);
                     }
                     _ => unimplemented!("Unsupported item type: {:?}", item),
                 }

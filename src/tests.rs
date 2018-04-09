@@ -279,6 +279,21 @@ mod tests {
     }
 
     #[test]
+    fn test_mod07() {
+        run_test("test_files/mod07.rs", "DEBUG: U64(1)", "DEBUG: 1");
+    }
+
+    #[test]
+    fn test_mod08() {
+        run_test("test_files/mod08.rs", "DEBUG: U64(3)", "DEBUG: 3");
+    }
+
+    #[test]
+    fn test_mod09() {
+        run_test("test_files/mod09.rs", "DEBUG: U64(4)", "DEBUG: 4");
+    }
+
+    #[test]
     fn test_mod_bad01() {
         run_bad_test("test_files/mod_bad01.rs", "not found in module");
     }
