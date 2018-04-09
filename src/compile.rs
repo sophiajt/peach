@@ -320,6 +320,7 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let output_objname = String::new() + path.with_extension("obj").to_str().unwrap();
 
     let output = Command::new(r"cl.exe")
+        .arg("/w")
         .arg(&format!("/Fe{}", output_fname))
         .arg(&format!("/Fo{}", output_objname))
         .arg(path)
