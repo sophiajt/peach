@@ -22,7 +22,7 @@ mod tests {
 
         // Step 2: Convert to bytecode from the given location
         // We assume the starting function is found in scope 0, the starting scope
-        bc.process_fn(0, "main");
+        bc.process_fn("main", 0);
 
         bc
     }
@@ -189,6 +189,11 @@ mod tests {
     }
 
     #[test]
+    fn test_fn08() {
+        run_test("test_files/fn08.rs", "DEBUG: U64(8)", "DEBUG: 8");
+    }
+
+    #[test]
     fn test_var01() {
         run_test("test_files/var01.rs", "DEBUG: U64(4)", "DEBUG: 4");
     }
@@ -266,6 +271,11 @@ mod tests {
     #[test]
     fn test_mod05() {
         run_test("test_files/mod05.rs", "DEBUG: U64(7)", "DEBUG: 7");
+    }
+
+    #[test]
+    fn test_mod06() {
+        run_test("test_files/mod06.rs", "DEBUG: U64(3)", "DEBUG: 3");
     }
 
     #[test]

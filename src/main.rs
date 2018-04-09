@@ -28,7 +28,7 @@ fn process(fname: &str, start_fn: &str) -> BytecodeEngine {
 
     // Step 2: Convert to bytecode from the given location
     // We assume the starting function is found in scope 0, the starting scope
-    bc.process_fn(0, start_fn);
+    bc.process_fn(start_fn, 0);
     //println!("{:#?}", bc.processed_fns);
 
     bc

@@ -154,26 +154,31 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
             }
-            Bytecode::Call(fn_name, scope_id) => {
-                let fun = bc.get_fn(fn_name, *scope_id);
-                let mut expr_string = String::new();
+            Bytecode::Call(definition_id) => {
+                if let DefinitionState::Processed(Processed::Fun(ref fun)) =
+                    bc.definitions[*definition_id]
+                {
+                    let mut expr_string = String::new();
 
-                expr_string += &format!("{}_{}(", fn_name, scope_id);
-                let expression_stack_len = cfile.expression_stack.len();
-                let mut offset = fun.params.len();
-                while offset > 0 {
-                    expr_string += &cfile.expression_stack[expression_stack_len - offset];
-                    if offset > 1 {
-                        expr_string += ", "
+                    expr_string += &format!("fun_{}(", definition_id);
+                    let expression_stack_len = cfile.expression_stack.len();
+                    let mut offset = fun.params.len();
+                    while offset > 0 {
+                        expr_string += &cfile.expression_stack[expression_stack_len - offset];
+                        if offset > 1 {
+                            expr_string += ", "
+                        }
+                        offset -= 1;
                     }
-                    offset -= 1;
-                }
 
-                expr_string += ")";
-                for _ in 0..fun.params.len() {
-                    cfile.expression_stack.pop();
+                    expr_string += ")";
+                    for _ in 0..fun.params.len() {
+                        cfile.expression_stack.pop();
+                    }
+                    cfile.delay_expr(expr_string);
+                } else {
+                    unimplemented!("Attempt to call unprocessed function");
                 }
-                cfile.delay_expr(expr_string);
             }
             Bytecode::If(_, ty) => {
                 let cond = cfile.expression_stack.pop().unwrap();
@@ -252,32 +257,22 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     cfile.codegen_raw("}\n");
     */
 
-    for (ref scope_id, ref scope) in bc.scopes.iter().enumerate() {
-        for fn_name in scope.definitions.keys() {
-            if let DefinitionState::Processed(Processed::Fun(ref fun)) =
-                bc.definitions[scope.definitions[fn_name]]
-            {
-                let fn_name = if *scope_id == 0 && fn_name == "main" {
-                    fn_name.clone()
-                } else {
-                    format!("{}_{}", fn_name, scope_id)
-                };
-                cfile.codegen_raw(&codegen_fn_header(&fn_name, fun));
+    let starting_fn_id = bc.scopes[0].definitions["main"];
+
+    for definition_id in 0..bc.definitions.len() {
+        if let DefinitionState::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
+            if definition_id != starting_fn_id {
+                cfile.codegen_raw(&codegen_fn_header(&format!("fun_{}", definition_id), fun));
             }
         }
     }
 
-    for (ref scope_id, ref scope) in bc.scopes.iter().enumerate() {
-        for fn_name in scope.definitions.keys() {
-            if let DefinitionState::Processed(Processed::Fun(ref fun)) =
-                bc.definitions[scope.definitions[fn_name]]
-            {
-                let fn_name = if *scope_id == 0 && fn_name == "main" {
-                    fn_name.clone()
-                } else {
-                    format!("{}_{}", fn_name, scope_id)
-                };
-                codegen_fn(&mut cfile, bc, &fn_name, fun);
+    for definition_id in 0..bc.definitions.len() {
+        if let DefinitionState::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
+            if definition_id == starting_fn_id {
+                codegen_fn(&mut cfile, bc, "main", fun);
+            } else {
+                codegen_fn(&mut cfile, bc, &format!("fun_{}", definition_id), fun);
             }
         }
     }

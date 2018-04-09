@@ -1,4 +1,4 @@
-use bytecode::{Bytecode, BytecodeEngine, Fun};
+use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Processed};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -147,10 +147,15 @@ pub fn eval_block_bytecode(
                 }
                 _ => unimplemented!("Assignment missing right-hand side value"),
             },
-            Bytecode::Call(fn_name, scope_id) => {
-                let target_fun = bc.get_fn(fn_name, *scope_id);
-                let result = eval_fn_bytecode(bc, &target_fun, value_stack, debug_capture);
-                value_stack.push(result);
+            Bytecode::Call(definition_id) => {
+                if let DefinitionState::Processed(Processed::Fun(ref target_fun)) =
+                    bc.definitions[*definition_id]
+                {
+                    let result = eval_fn_bytecode(bc, target_fun, value_stack, debug_capture);
+                    value_stack.push(result);
+                } else {
+                    unimplemented!("Eval of unprocessed function");
+                }
             }
             Bytecode::DebugPrint => match value_stack.pop() {
                 Some(s) => match debug_capture {

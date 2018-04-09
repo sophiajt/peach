@@ -23,7 +23,7 @@ pub enum Bytecode {
     VarDeclUninit(VarId),
     Var(VarId),
     Assign(VarId),
-    Call(String, ScopeId),
+    Call(DefinitionId),
     If(Offset, Ty), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
     Else(Offset, Ty), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
     EndIf(Ty),        //includes the type of the result, if this is an expression
@@ -246,7 +246,7 @@ impl BytecodeEngine {
         {
             if self.scopes[current_scope_id].is_mod {
                 unimplemented!(
-                    "Definition {} not found in module (or needs ot be precomputed)",
+                    "Definition {} not found in module (or needs to be precomputed)",
                     defn_name
                 );
             }
@@ -263,7 +263,7 @@ impl BytecodeEngine {
         )
     }
 
-    // Gets the bytecoded function for the given name
+    /// Gets the bytecoded function for the given name
     pub fn get_fn(&self, defn_name: &str, scope_id: ScopeId) -> &Fun {
         let (defn_id, _) = self.get_defn(defn_name, scope_id);
         let defn = &self.definitions[defn_id];
@@ -275,17 +275,6 @@ impl BytecodeEngine {
         }
     }
 
-    fn get_mod(&self, defn_name: &str, scope_id: ScopeId) -> &Mod {
-        let (defn_id, _) = self.get_defn(defn_name, scope_id);
-        let defn = &self.definitions[defn_id];
-
-        if let DefinitionState::Processed(Processed::Mod(ref p)) = defn {
-            p
-        } else {
-            unimplemented!("Module {} needs to be precomputed", defn_name)
-        }
-    }
-
     pub fn load_file(&mut self, src: &String) {
         let syntax_file = syn::parse_file(&src).expect("Unable to parse file");
 
@@ -293,11 +282,11 @@ impl BytecodeEngine {
             match item {
                 Item::Fn(item_fn) => {
                     let fn_name = item_fn.ident.to_string();
-                    self.add_lazy_fn(0, fn_name, item_fn);
+                    self.add_lazy_fn(fn_name, 0, item_fn);
                 }
                 Item::Mod(item_mod) => {
                     let mod_name = item_mod.ident.to_string();
-                    self.add_lazy_mod(0, mod_name, item_mod);
+                    self.add_lazy_mod(mod_name, 0, item_mod);
                 }
                 _ => {
                     unimplemented!("Unknown item type: {:#?}", item);
@@ -306,31 +295,33 @@ impl BytecodeEngine {
         }
     }
 
-    pub fn process_fn(&mut self, scope_id: ScopeId, fn_name: &str) -> (DefinitionId, ScopeId) {
+    fn add_lazy_fn(&mut self, fn_name: String, scope_id: ScopeId, item_fn: ItemFn) {
+        self.definitions
+            .push(DefinitionState::Lazy(Lazy::ItemFn(item_fn)));
+        self.scopes[scope_id]
+            .definitions
+            .insert(fn_name, self.definitions.len() - 1);
+    }
+
+    fn add_lazy_mod(&mut self, mod_name: String, scope_id: ScopeId, item_mod: ItemMod) {
+        self.definitions
+            .push(DefinitionState::Lazy(Lazy::ItemMod(item_mod)));
+        self.scopes[scope_id]
+            .definitions
+            .insert(mod_name, self.definitions.len() - 1);
+    }
+
+    pub fn process_fn(&mut self, fn_name: &str, scope_id: ScopeId) -> DefinitionId {
         let (definition_id, found_scope_id) = self.get_defn(fn_name, scope_id);
 
         let fun = self.convert_fn_to_bytecode(definition_id, found_scope_id);
         self.definitions[definition_id] = DefinitionState::Processed(Processed::Fun(fun));
 
-        (definition_id, found_scope_id)
+        definition_id
     }
 
-    fn process_mod(&mut self, scope_id: ScopeId, mod_name: &str) {
-        let definition_id;
-        let mut current_scope_id = scope_id;
-        loop {
-            if self.scopes[current_scope_id]
-                .definitions
-                .contains_key(mod_name)
-            {
-                definition_id = self.scopes[current_scope_id].definitions[mod_name];
-                break;
-            } else if let Some(parent) = self.scopes[current_scope_id].parent {
-                current_scope_id = parent;
-            } else {
-                unimplemented!("Couldn't find module: {}", mod_name);
-            }
-        }
+    fn process_mod(&mut self, mod_name: &str, scope_id: ScopeId) -> DefinitionId {
+        let (definition_id, current_scope_id) = self.get_defn(mod_name, scope_id);
 
         if let DefinitionState::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id]
         {
@@ -343,11 +334,11 @@ impl BytecodeEngine {
                     match item {
                         Item::Fn(item_fn) => {
                             let fn_name = item_fn.ident.to_string();
-                            self.add_lazy_fn(mod_scope_id, fn_name, item_fn);
+                            self.add_lazy_fn(fn_name, mod_scope_id, item_fn);
                         }
                         Item::Mod(item_mod) => {
                             let mod_name = item_mod.ident.to_string();
-                            self.add_lazy_mod(mod_scope_id, mod_name, item_mod);
+                            self.add_lazy_mod(mod_name, mod_scope_id, item_mod);
                         }
                         _ => unimplemented!("Unsupport item type in module"),
                     }
@@ -358,22 +349,56 @@ impl BytecodeEngine {
             self.definitions[definition_id] =
                 DefinitionState::Processed(Processed::Mod(Mod::new(mod_scope_id)));
         }
+        definition_id
     }
 
-    fn add_lazy_fn(&mut self, scope_id: ScopeId, fn_name: String, item_fn: ItemFn) {
-        self.definitions
-            .push(DefinitionState::Lazy(Lazy::ItemFn(item_fn)));
-        self.scopes[scope_id]
-            .definitions
-            .insert(fn_name, self.definitions.len() - 1);
+    fn process_defn(&mut self, name: &str, scope_id: ScopeId) -> DefinitionId {
+        let (definition_id, scope_id) = self.get_defn(name, scope_id);
+
+        if let DefinitionState::Lazy(ref lazy) = self.definitions[definition_id] {
+            match lazy {
+                Lazy::ItemFn(_) => self.process_fn(name, scope_id),
+                Lazy::ItemMod(_) => self.process_mod(name, scope_id),
+            }
+        } else {
+            definition_id
+        }
     }
 
-    fn add_lazy_mod(&mut self, scope_id: ScopeId, mod_name: String, item_mod: ItemMod) {
-        self.definitions
-            .push(DefinitionState::Lazy(Lazy::ItemMod(item_mod)));
-        self.scopes[scope_id]
-            .definitions
-            .insert(mod_name, self.definitions.len() - 1);
+    /// Processes a path looking for the definition being referenced.
+    /// Returns: The processed definition id of the found item
+    fn process_path(&mut self, path: &syn::Path, current_scope_id: ScopeId) -> DefinitionId {
+        let mut mod_scope_id = current_scope_id;
+        if path.leading_colon.is_some() {
+            loop {
+                if let Some(parent_id) = self.scopes[mod_scope_id].parent {
+                    mod_scope_id = parent_id;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let num_segments = path.segments.len();
+
+        for current_segment in 0..(num_segments - 1) {
+            let ident = path.segments[current_segment].ident.as_ref();
+            let definition_id = self.process_mod(ident, mod_scope_id);
+            if let DefinitionState::Processed(Processed::Mod(ref module)) =
+                self.definitions[definition_id]
+            {
+                mod_scope_id = module.scope_id;
+            } else {
+                unimplemented!("Failure to process module");
+            }
+        }
+
+        // from there, look in this scpoe for the name
+        let num_segments = path.segments.len();
+        let ident = path.segments[num_segments - 1].ident.to_string();
+
+        // lastly, make sure we've processed the definition before we return
+        self.process_defn(&ident, mod_scope_id)
     }
 
     fn resolve_type(&mut self, tp: &Type) -> Ty {
@@ -752,30 +777,8 @@ impl BytecodeEngine {
                             }
                         }
 
-                        let mut mod_scope_id = current_scope_id;
-                        if ep.path.leading_colon.is_some() {
-                            loop {
-                                if let Some(parent_id) = self.scopes[mod_scope_id].parent {
-                                    mod_scope_id = parent_id;
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
+                        let definition_id = self.process_path(&ep.path, current_scope_id);
 
-                        let num_segments = ep.path.segments.len();
-
-                        for current_segment in 0..(num_segments - 1) {
-                            let ident = ep.path.segments[current_segment].ident.as_ref();
-                            self.process_mod(mod_scope_id, ident);
-                            let module = self.get_mod(ident, mod_scope_id);
-                            mod_scope_id = module.scope_id;
-                        }
-
-                        // let's find our way to the function
-                        let ident = ep.path.segments[num_segments - 1].ident.to_string();
-
-                        let (definition_id, scope_id) = self.process_fn(mod_scope_id, &ident);
                         if let DefinitionState::Processed(Processed::Fun(ref target_fn)) =
                             self.definitions[definition_id]
                         {
@@ -786,18 +789,18 @@ impl BytecodeEngine {
                                     arg,
                                     expected_return_type,
                                     bytecode,
-                                    mod_scope_id,
+                                    current_scope_id,
                                     var_stack,
                                 );
                             }
 
-                            bytecode.push(Bytecode::Call(ident, scope_id));
+                            bytecode.push(Bytecode::Call(definition_id));
 
                             return_ty
                         } else {
                             unimplemented!(
-                                "Processed function {} did not process correctly",
-                                ident
+                                "Processed function {:?} did not process correctly",
+                                ep.path
                             );
                         }
                     }
@@ -835,7 +838,7 @@ impl BytecodeEngine {
                 var_stack,
             ),
             Stmt::Local(ref l) => {
-                let ident = match *l.pat {
+                let ident = match l.pats[0] {
                     Pat::Ident(ref pi) => pi.ident.to_string(),
                     _ => unimplemented!("Unsupported pattern in variable declaration"),
                 };
@@ -909,8 +912,69 @@ impl BytecodeEngine {
 
         for stmt in &block.stmts {
             if let Stmt::Item(ref item) = stmt {
-                if let Item::Fn(ref item_fn) = item {
-                    self.add_lazy_fn(current_scope_id, item_fn.ident.to_string(), item_fn.clone());
+                match item {
+                    Item::Fn(ref item_fn) => {
+                        self.add_lazy_fn(
+                            item_fn.ident.to_string(),
+                            current_scope_id,
+                            item_fn.clone(),
+                        );
+                    }
+                    Item::Mod(ref item_mod) => self.add_lazy_mod(
+                        item_mod.ident.to_string(),
+                        current_scope_id,
+                        item_mod.clone(),
+                    ),
+                    Item::Use(ref item_use) => {
+                        let mut current = &item_use.tree;
+                        let mut temp_scope_id = current_scope_id;
+
+                        loop {
+                            println!("Use walking through: {}", temp_scope_id);
+                            if self.scopes[temp_scope_id].is_mod {
+                                break;
+                            }
+                            if let Some(parent_id) = self.scopes[temp_scope_id].parent {
+                                temp_scope_id = parent_id;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        loop {
+                            match current {
+                                syn::UseTree::Name(ref use_name) => {
+                                    let definition_id =
+                                        self.process_defn(use_name.ident.as_ref(), temp_scope_id);
+
+                                    println!(
+                                        "Putting {} {} in at {}",
+                                        use_name.ident.as_ref(),
+                                        definition_id,
+                                        current_scope_id
+                                    );
+                                    self.scopes[current_scope_id]
+                                        .definitions
+                                        .insert(use_name.ident.to_string(), definition_id);
+                                    break;
+                                }
+                                syn::UseTree::Path(ref use_path) => {
+                                    let definition_id =
+                                        self.process_mod(use_path.ident.as_ref(), temp_scope_id);
+                                    if let DefinitionState::Processed(Processed::Mod(ref module)) =
+                                        self.definitions[definition_id]
+                                    {
+                                        temp_scope_id = module.scope_id;
+                                        current = &*use_path.tree;
+                                    } else {
+                                        unimplemented!("Expected module in use path");
+                                    }
+                                }
+                                _ => unimplemented!("Unsupport 'use' tree type"),
+                            }
+                        }
+                    }
+                    _ => unimplemented!("Unsupported item type: {:?}", item),
                 }
             }
         }
@@ -934,7 +998,7 @@ impl BytecodeEngine {
         let defn_state = self.definitions[definition_id].clone();
 
         match defn_state {
-            DefinitionState::Processed(Processed::Fun(fun)) => fun.clone(),
+            DefinitionState::Processed(Processed::Fun(fun)) => fun,
             DefinitionState::Lazy(Lazy::ItemFn(item_fn)) => {
                 let mut bytecode = Vec::new();
 
