@@ -15,13 +15,11 @@ Some possible next steps:
 * Add functions and function calls
   * (DONE) basic support
   * (DONE) params
-  * TODO: Check types of each argument
 * (DONE) if
 * (DONE) while
 * (DONE) Playing with the while codegen, I'm noticing we could codegen a bit smarter.  Expressions could come out with paren'd strings inside of other expressions.  Assignments and the like would cap off the codegen.
 * (DONE) if expressions
 * (IN PROGRESS) mod
-*   TODO: mod visibility
 *   DONE: correct mod scope traversal
 *   DONE: leading colon
 * (DONE) 'use' items
@@ -31,6 +29,9 @@ Some possible next steps:
 * All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
 * TODO: mutability check
 * TODO: consistent naming
+* TODO: mod visibility
+* TODO: mod file loading from another dir
+* TODO: Check types of each function argument
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)
 
