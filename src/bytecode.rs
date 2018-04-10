@@ -124,7 +124,7 @@ pub(crate) enum Processed {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum DefinitionState {
+pub(crate) enum Definition {
     Lazy(Lazy),
     Processed(Processed),
 }
@@ -162,20 +162,18 @@ impl Scope {
 /// Processing is done on function granularity.  As definitions are referenced in the function, they too are processed.
 pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
-    pub(crate) definitions: Vec<DefinitionState>,
+    pub(crate) definitions: Vec<Definition>,
     pub(crate) project_root: Option<::std::path::PathBuf>,
 }
 
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
         BytecodeEngine {
-            scopes: vec![
-                Scope {
-                    parent: None,
-                    is_mod: true,
-                    definitions: HashMap::new(),
-                },
-            ],
+            scopes: vec![Scope {
+                parent: None,
+                is_mod: true,
+                definitions: HashMap::new(),
+            }],
             definitions: vec![],
             project_root: None,
         }
@@ -215,7 +213,7 @@ impl BytecodeEngine {
         let (defn_id, _) = self.get_defn(defn_name, scope_id);
         let defn = &self.definitions[defn_id];
 
-        if let DefinitionState::Processed(Processed::Fun(ref p)) = defn {
+        if let Definition::Processed(Processed::Fun(ref p)) = defn {
             p
         } else {
             unimplemented!("Function {:?} needs to be precomputed", defn)
@@ -267,7 +265,7 @@ impl BytecodeEngine {
                 // Adds a function to be processed lazily
                 let fn_name = item_fn.ident.to_string();
                 self.definitions
-                    .push(DefinitionState::Lazy(Lazy::ItemFn(item_fn)));
+                    .push(Definition::Lazy(Lazy::ItemFn(item_fn)));
                 self.scopes[current_scope_id]
                     .definitions
                     .insert(fn_name, self.definitions.len() - 1);
@@ -301,7 +299,7 @@ impl BytecodeEngine {
                     // This allows us to make its contents lazily available
                     // Part of the reason we do it this way is that we don't have an ItemMod
                     self.definitions
-                        .push(DefinitionState::Processed(Processed::Mod(Mod::new(
+                        .push(Definition::Processed(Processed::Mod(Mod::new(
                             mod_scope_id,
                         ))));
 
@@ -316,7 +314,7 @@ impl BytecodeEngine {
                     // Add module to be processed lazily
                     let mod_name = item_mod.ident.to_string();
                     self.definitions
-                        .push(DefinitionState::Lazy(Lazy::ItemMod(item_mod)));
+                        .push(Definition::Lazy(Lazy::ItemMod(item_mod)));
                     self.scopes[current_scope_id]
                         .definitions
                         .insert(mod_name, self.definitions.len() - 1);
@@ -352,7 +350,7 @@ impl BytecodeEngine {
         let (definition_id, found_scope_id) = self.get_defn(fn_name, scope_id);
 
         let fun = self.convert_fn_to_bytecode(definition_id, found_scope_id);
-        self.definitions[definition_id] = DefinitionState::Processed(Processed::Fun(fun));
+        self.definitions[definition_id] = Definition::Processed(Processed::Fun(fun));
 
         definition_id
     }
@@ -360,8 +358,7 @@ impl BytecodeEngine {
     fn process_mod(&mut self, mod_name: &str, scope_id: ScopeId) -> DefinitionId {
         let (definition_id, current_scope_id) = self.get_defn(mod_name, scope_id);
 
-        if let DefinitionState::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id]
-        {
+        if let Definition::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id] {
             self.scopes.push(Scope::new(Some(current_scope_id), true));
             let mod_scope_id = self.scopes.len() - 1;
 
@@ -374,7 +371,7 @@ impl BytecodeEngine {
             }
 
             self.definitions[definition_id] =
-                DefinitionState::Processed(Processed::Mod(Mod::new(mod_scope_id)));
+                Definition::Processed(Processed::Mod(Mod::new(mod_scope_id)));
         }
         definition_id
     }
@@ -382,7 +379,7 @@ impl BytecodeEngine {
     fn process_defn(&mut self, name: &str, scope_id: ScopeId) -> DefinitionId {
         let (definition_id, scope_id) = self.get_defn(name, scope_id);
 
-        if let DefinitionState::Lazy(ref lazy) = self.definitions[definition_id] {
+        if let Definition::Lazy(ref lazy) = self.definitions[definition_id] {
             match lazy {
                 Lazy::ItemFn(_) => self.process_fn(name, scope_id),
                 Lazy::ItemMod(_) => self.process_mod(name, scope_id),
@@ -415,7 +412,7 @@ impl BytecodeEngine {
         for current_segment in 0..(num_segments - 1) {
             let ident = path.segments[current_segment].ident.as_ref();
             let definition_id = self.process_mod(ident, mod_scope_id);
-            if let DefinitionState::Processed(Processed::Mod(ref module)) =
+            if let Definition::Processed(Processed::Mod(ref module)) =
                 self.definitions[definition_id]
             {
                 mod_scope_id = module.scope_id;
@@ -448,7 +445,7 @@ impl BytecodeEngine {
             }
             syn::UseTree::Path(ref use_path) => {
                 let definition_id = self.process_mod(use_path.ident.as_ref(), current_scope_id);
-                if let DefinitionState::Processed(Processed::Mod(ref module)) =
+                if let Definition::Processed(Processed::Mod(ref module)) =
                     self.definitions[definition_id]
                 {
                     self.process_use_tree(&*use_path.tree, original_scope_id, module.scope_id);

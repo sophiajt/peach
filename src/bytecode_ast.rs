@@ -1,5 +1,5 @@
-use bytecode::{Bytecode, BytecodeEngine, DefinitionId, DefinitionState, Fun, Lazy, Param,
-               Processed, Scope, ScopeId, VarStack};
+use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param, Processed,
+               Scope, ScopeId, VarStack};
 use syn::{BinOp, Block, Expr, FnArg, IntSuffix, Lit, Pat, ReturnType, Stmt, Type};
 use typecheck::{assignment_compatible, operator_compatible, tighter_of_types, Ty};
 
@@ -12,8 +12,8 @@ impl BytecodeEngine {
         let defn_state = self.definitions[definition_id].clone();
 
         match defn_state {
-            DefinitionState::Processed(Processed::Fun(fun)) => fun,
-            DefinitionState::Lazy(Lazy::ItemFn(item_fn)) => {
+            Definition::Processed(Processed::Fun(fun)) => fun,
+            Definition::Lazy(Lazy::ItemFn(item_fn)) => {
                 let mut bytecode = Vec::new();
 
                 let return_ty = match &item_fn.decl.output {
@@ -562,7 +562,7 @@ impl BytecodeEngine {
 
                         let definition_id = self.process_path(&ep.path, current_scope_id);
 
-                        if let DefinitionState::Processed(Processed::Fun(ref target_fn)) =
+                        if let Definition::Processed(Processed::Fun(ref target_fn)) =
                             self.definitions[definition_id]
                         {
                             let return_ty = target_fn.return_ty.clone();

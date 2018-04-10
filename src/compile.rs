@@ -1,4 +1,4 @@
-use bytecode::{Bytecode, BytecodeEngine, DefinitionState, Fun, Processed};
+use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
 use time::PreciseTime;
 use typecheck::Ty;
 
@@ -156,7 +156,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
             }
             Bytecode::Call(definition_id) => {
-                if let DefinitionState::Processed(Processed::Fun(ref fun)) =
+                if let Definition::Processed(Processed::Fun(ref fun)) =
                     bc.definitions[*definition_id]
                 {
                     let mut expr_string = String::new();
@@ -261,7 +261,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     let starting_fn_id = bc.scopes[0].definitions["main"];
 
     for definition_id in 0..bc.definitions.len() {
-        if let DefinitionState::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
+        if let Definition::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
             if definition_id != starting_fn_id {
                 cfile.codegen_raw(&codegen_fn_header(&format!("fun_{}", definition_id), fun));
             }
@@ -269,7 +269,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     }
 
     for definition_id in 0..bc.definitions.len() {
-        if let DefinitionState::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
+        if let Definition::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
             if definition_id == starting_fn_id {
                 codegen_fn(&mut cfile, bc, "main", fun);
             } else {
@@ -356,7 +356,7 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
 #[cfg(unix)]
 fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let start = PreciseTime::now();
-    println!("path: {:?}", path);
+    //println!("path: {:?}", path);
     use std::process::Command;
     let output_fname = String::new() + path.with_extension("").to_str().unwrap();
 
