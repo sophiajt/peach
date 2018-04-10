@@ -1,6 +1,6 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
 use time::PreciseTime;
-use typecheck::Ty;
+use typecheck::{TypeId, builtin_type};
 
 struct CFile {
     output_src: String,
@@ -33,20 +33,20 @@ impl CFile {
     }
 }
 
-fn codegen_type(ty: &Ty) -> String {
-    let codegen_ty = match ty {
-        Ty::U64 => "unsigned long long".into(),
-        Ty::U32 => "unsigned".into(),
-        Ty::UnknownInt => "int".into(),
-        Ty::Void => "void".into(),
-        Ty::Bool => "bool".into(),
-        _ => unimplemented!("Can't codegen type: {:?}", ty),
+fn codegen_type(type_id: TypeId) -> String {
+    let codegen_ty = match type_id {
+        builtin_type::U64 => "unsigned long long".into(),
+        builtin_type::U32 => "unsigned".into(),
+        builtin_type::UNKNOWN_INT => "int".into(),
+        builtin_type::VOID => "void".into(),
+        builtin_type::BOOL => "bool".into(),
+        _ => unimplemented!("Can't codegen type: {:?}", type_id),
     };
     codegen_ty
 }
 
 fn codegen_fn_header(fn_name: &str, fun: &Fun) -> String {
-    format!("{} {}();\n", codegen_type(&fun.return_ty), fn_name)
+    format!("{} {}();\n", codegen_type(fun.return_type_id), fn_name)
 }
 
 fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) {
@@ -55,14 +55,14 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
     //TODO: This isn't the best solution, but it's an experiment
     let mut temp_id_stack = vec![];
 
-    cfile.codegen_raw(&format!("{} {}(", &codegen_type(&fun.return_ty), fn_name));
+    cfile.codegen_raw(&format!("{} {}(", &codegen_type(fun.return_type_id), fn_name));
 
     let mut first = true;
     for param in &fun.params {
         cfile.codegen_raw(&format!(
             "{}{} {}",
             if !first { ", " } else { "" },
-            codegen_type(&param.ty),
+            codegen_type(param.type_id),
             param.name
         ));
         first = false;
@@ -73,7 +73,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
     for param in &fun.params {
         cfile.codegen_raw(&format!(
             "{} v{} = {};\n",
-            codegen_type(&param.ty),
+            codegen_type(param.type_id),
             param.var_id,
             param.name
         ));
@@ -137,7 +137,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.codegen_stmt(&format!(
                     "{} v{} = {};\n",
-                    codegen_type(&var.ty),
+                    codegen_type(var.type_id),
                     *var_id,
                     rhs
                 ));
@@ -145,7 +145,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             Bytecode::VarDeclUninit(var_id) => {
                 let var = &fun.vars[*var_id];
 
-                cfile.codegen_stmt(&format!("{} v{};\n", codegen_type(&var.ty), *var_id));
+                cfile.codegen_stmt(&format!("{} v{};\n", codegen_type(var.type_id), *var_id));
             }
             Bytecode::Var(var_id) => {
                 cfile.delay_expr(format!("v{}", var_id));
@@ -181,12 +181,12 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                     unimplemented!("Attempt to call unprocessed function");
                 }
             }
-            Bytecode::If(_, ty) => {
+            Bytecode::If(_, type_id) => {
                 let cond = cfile.expression_stack.pop().unwrap();
 
-                match ty {
-                    Ty::U64 | Ty::Bool | Ty::U32 | Ty::UnknownInt => {
-                        cfile.codegen_stmt(&format!("{} t{};\n", codegen_type(ty), next_temp_id));
+                match *type_id {
+                    builtin_type::U64 | builtin_type::BOOL | builtin_type::U32 | builtin_type::UNKNOWN_INT => {
+                        cfile.codegen_stmt(&format!("{} t{};\n", codegen_type(*type_id), next_temp_id));
                         temp_id_stack.push(next_temp_id);
                         next_temp_id += 1;
                     }
@@ -195,8 +195,8 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.codegen_stmt(&format!("if ({}) {{\n", cond));
             }
-            Bytecode::Else(_, ty) => {
-                if *ty != Ty::Void {
+            Bytecode::Else(_, type_id) => {
+                if *type_id != builtin_type::VOID {
                     let result = cfile.expression_stack.pop().unwrap();
                     cfile.codegen_stmt(&format!(
                         "t{} = {};\n",
@@ -206,8 +206,8 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 }
                 cfile.codegen_stmt("} else {\n");
             }
-            Bytecode::EndIf(ty) => {
-                if *ty != Ty::Void {
+            Bytecode::EndIf(type_id) => {
+                if *type_id != builtin_type::VOID {
                     let result = cfile.expression_stack.pop().unwrap();
                     let temp_id = temp_id_stack.pop().unwrap();
                     cfile.codegen_stmt(&format!("t{} = {};\n}}\n", temp_id, result));

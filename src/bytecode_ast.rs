@@ -1,7 +1,7 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param, Processed,
                Scope, ScopeId, VarStack};
 use syn::{BinOp, Block, Expr, FnArg, IntSuffix, Lit, Pat, ReturnType, Stmt, Type};
-use typecheck::{assignment_compatible, operator_compatible, tighter_of_types, Ty};
+use typecheck::{builtin_type, TypeId};
 
 impl BytecodeEngine {
     pub(crate) fn convert_fn_to_bytecode(
@@ -16,8 +16,8 @@ impl BytecodeEngine {
             Definition::Lazy(Lazy::ItemFn(item_fn)) => {
                 let mut bytecode = Vec::new();
 
-                let return_ty = match &item_fn.decl.output {
-                    ReturnType::Default => Ty::Void,
+                let return_type_id = match &item_fn.decl.output {
+                    ReturnType::Default => builtin_type::VOID,
                     ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
                 };
 
@@ -31,9 +31,9 @@ impl BytecodeEngine {
                             match capture.pat {
                                 Pat::Ident(ref pi) => {
                                     let ident = pi.ident.to_string();
-                                    let ty = self.resolve_type(&capture.ty);
-                                    let var_id = var_stack.add_var(ident.clone(), ty.clone());
-                                    params.push(Param::new(ident, var_id, ty));
+                                    let type_id = self.resolve_type(&capture.ty);
+                                    let var_id = var_stack.add_var(ident.clone(), type_id);
+                                    params.push(Param::new(ident, var_id, type_id));
                                 }
                                 _ => {
                                     unimplemented!("Unsupported pattern type in function parameter")
@@ -44,30 +44,30 @@ impl BytecodeEngine {
                     }
                 }
 
-                let block_ty = self.convert_block_to_bytecode(
+                let block_type_id = self.convert_block_to_bytecode(
                     &item_fn.block,
-                    &return_ty,
+                    return_type_id,
                     &mut bytecode,
                     Some(scope_id),
                     &mut var_stack,
                 );
 
-                match block_ty {
-                    Ty::Void => bytecode.push(Bytecode::ReturnVoid),
+                match block_type_id {
+                    builtin_type::VOID => bytecode.push(Bytecode::ReturnVoid),
                     _ => bytecode.push(Bytecode::ReturnLastStackValue),
                 }
 
-                if !assignment_compatible(&return_ty, &block_ty) {
+                if !self.typechecker.assignment_compatible(return_type_id, block_type_id) {
                     unimplemented!(
                         "Mismatched return types: {:?} and {:?}",
-                        block_ty,
-                        return_ty
+                        block_type_id,
+                        return_type_id
                     );
                 }
 
                 Fun {
                     params,
-                    return_ty,
+                    return_type_id,
                     vars: var_stack.vars,
                     bytecode,
                 }
@@ -79,14 +79,14 @@ impl BytecodeEngine {
     pub(crate) fn convert_block_to_bytecode(
         &mut self,
         block: &Block,
-        expected_return_type: &Ty,
+        expected_return_type: TypeId,
         bytecode: &mut Vec<Bytecode>,
         parent: Option<ScopeId>,
         var_stack: &mut VarStack,
-    ) -> Ty {
+    ) -> TypeId {
         //TODO: there may be more efficient ways to do this, but this will do for now
         let mut block_var_stack = var_stack.clone();
-        let mut return_ty = Ty::Void;
+        let mut return_type_id = builtin_type::VOID;
         self.scopes.push(Scope::new(parent, false));
         let current_scope_id = self.scopes.len() - 1;
 
@@ -97,9 +97,9 @@ impl BytecodeEngine {
         }
 
         for stmt in &block.stmts {
-            return_ty = self.convert_stmt_to_bytecode(
+            return_type_id = self.convert_stmt_to_bytecode(
                 stmt,
-                &expected_return_type,
+                expected_return_type,
                 bytecode,
                 current_scope_id,
                 &mut block_var_stack,
@@ -108,17 +108,17 @@ impl BytecodeEngine {
 
         var_stack.vars = block_var_stack.vars;
 
-        return_ty
+        return_type_id
     }
 
     pub fn convert_stmt_to_bytecode(
         &mut self,
         stmt: &Stmt,
-        expected_return_type: &Ty,
+        expected_return_type: TypeId,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
         var_stack: &mut VarStack,
-    ) -> Ty {
+    ) -> TypeId {
         match stmt {
             Stmt::Semi(ref e, _) => {
                 self.convert_expr_to_bytecode(
@@ -128,7 +128,7 @@ impl BytecodeEngine {
                     current_scope_id,
                     var_stack,
                 );
-                Ty::Void
+                builtin_type::VOID
             }
             Stmt::Expr(ref e) => self.convert_expr_to_bytecode(
                 e,
@@ -156,12 +156,12 @@ impl BytecodeEngine {
                             None => {
                                 let var_id = var_stack.add_var(ident, rhs_ty);
                                 bytecode.push(Bytecode::VarDecl(var_id));
-                                Ty::Void
+                                builtin_type::VOID
                             }
                             Some(ref explicit_ty) => {
                                 let var_ty = self.resolve_type(&*explicit_ty.1);
 
-                                if !assignment_compatible(&var_ty, &rhs_ty) {
+                                if !self.typechecker.assignment_compatible(var_ty, rhs_ty) {
                                     unimplemented!(
                                         "Explicit variable type '{:?}' does not match expression type '{:?}'", var_ty, rhs_ty
                                     )
@@ -170,14 +170,14 @@ impl BytecodeEngine {
                                 let var_id = var_stack.add_var(ident, var_ty);
                                 bytecode.push(Bytecode::VarDecl(var_id));
 
-                                Ty::Void
+                                builtin_type::VOID
                             }
                         }
                     }
                     None => {
                         match l.ty {
                             None => {
-                                let var_id = var_stack.add_var(ident, Ty::Unknown);
+                                let var_id = var_stack.add_var(ident, builtin_type::UNKNOWN);
                                 bytecode.push(Bytecode::VarDeclUninit(var_id));
                             }
                             Some(ref explicit_ty) => {
@@ -188,22 +188,22 @@ impl BytecodeEngine {
                             }
                         }
 
-                        Ty::Void
+                        builtin_type::VOID
                     }
                 }
             }
-            _ => Ty::Void, // ignore Item(s) as we've already processed them
+            _ => builtin_type::VOID, // ignore Item(s) as we've already processed them
         }
     }
 
     pub fn convert_expr_to_bytecode(
         &mut self,
         expr: &Expr,
-        expected_return_type: &Ty,
+        expected_return_type: TypeId,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
         var_stack: &mut VarStack,
-    ) -> Ty {
+    ) -> TypeId {
         match expr {
             Expr::Return(er) => {
                 let actual_return_type = match er.expr {
@@ -214,41 +214,41 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     ),
-                    None => Ty::Void,
+                    None => builtin_type::VOID,
                 };
 
-                if assignment_compatible(expected_return_type, &actual_return_type) {
+                if self.typechecker.assignment_compatible(expected_return_type, actual_return_type) {
                     match actual_return_type {
-                        Ty::Void => bytecode.push(Bytecode::ReturnVoid),
+                        builtin_type::VOID => bytecode.push(Bytecode::ReturnVoid),
                         _ => bytecode.push(Bytecode::ReturnLastStackValue),
                     }
-                    Ty::Void
+                    builtin_type::VOID
                 } else {
                     println!(
                         "Mismatched return types: {:?} and {:?}",
                         actual_return_type, expected_return_type
                     );
-                    Ty::Error
+                    builtin_type::ERROR
                 }
             }
             Expr::Lit(el) => match el.lit {
                 Lit::Int(ref li) => match li.suffix() {
                     IntSuffix::U64 => {
                         bytecode.push(Bytecode::PushU64(li.value()));
-                        Ty::U64
+                        builtin_type::U64
                     }
                     IntSuffix::U32 => {
                         bytecode.push(Bytecode::PushU32(li.value() as u32));
-                        Ty::U32
+                        builtin_type::U32
                     }
                     _ => {
                         bytecode.push(Bytecode::PushU64(li.value()));
-                        Ty::UnknownInt
+                        builtin_type::UNKNOWN_INT
                     }
                 },
                 Lit::Bool(ref lb) => {
                     bytecode.push(Bytecode::PushBool(lb.value));
-                    Ty::Bool
+                    builtin_type::BOOL
                 }
                 _ => unimplemented!("unknown literal: {:?}", el),
             },
@@ -286,10 +286,10 @@ impl BytecodeEngine {
                         let var_id = var_id.unwrap();
                         let var = &mut var_stack.vars[var_id];
 
-                        if assignment_compatible(&var.ty, &rhs_type) {
-                            var.ty = tighter_of_types(&var.ty, &rhs_type);
+                        if self.typechecker.assignment_compatible(var.type_id, rhs_type) {
+                            var.type_id = self.typechecker.tighter_of_types(var.type_id, rhs_type);
                         } else {
-                            unimplemented!("Assignment between {:?} and {:?}", var.ty, rhs_type);
+                            unimplemented!("Assignment between {:?} and {:?}", var.type_id, rhs_type);
                         }
 
                         bytecode.push(Bytecode::Assign(var_id));
@@ -297,7 +297,7 @@ impl BytecodeEngine {
                     _ => unimplemented!("Unsupported variable path for assignment"),
                 }
 
-                Ty::Void
+                builtin_type::VOID
             }
             Expr::If(ei) => {
                 let cond_type = self.convert_expr_to_bytecode(
@@ -309,11 +309,11 @@ impl BytecodeEngine {
                 );
 
                 match cond_type {
-                    Ty::Bool => {}
+                    builtin_type::BOOL => {}
                     _ => unimplemented!("If condition needs to be boolean"),
                 }
 
-                bytecode.push(Bytecode::If(0, Ty::Void));
+                bytecode.push(Bytecode::If(0, builtin_type::VOID));
                 let before_then_block_len = bytecode.len();
 
                 let then_ty = self.convert_block_to_bytecode(
@@ -326,7 +326,7 @@ impl BytecodeEngine {
                 let after_then_block_len = bytecode.len();
 
                 if let Some(ref else_branch) = ei.else_branch {
-                    bytecode.push(Bytecode::Else(0, Ty::Void));
+                    bytecode.push(Bytecode::Else(0, builtin_type::VOID));
                     match *else_branch.1 {
                         Expr::Block(ref eb) => {
                             let else_ty = self.convert_block_to_bytecode(
@@ -348,7 +348,7 @@ impl BytecodeEngine {
                         _ => unimplemented!("Unsupported else block"),
                     }
                 }
-                bytecode.push(Bytecode::EndIf(then_ty.clone()));
+                bytecode.push(Bytecode::EndIf(then_ty));
 
                 // Patch the original offset to the correct offset
                 bytecode[before_then_block_len - 1] = Bytecode::If(
@@ -370,7 +370,7 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                if cond_type != Ty::Bool {
+                if cond_type != builtin_type::BOOL {
                     unimplemented!("If condition needs to be boolean");
                 }
 
@@ -410,9 +410,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if operator_compatible(&lhs_type, &rhs_type) {
+                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Add);
-                        tighter_of_types(&lhs_type, &rhs_type)
+                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!("Can't add values of {:?} and {:?}", lhs_type, rhs_type);
                     }
@@ -432,9 +432,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if operator_compatible(&lhs_type, &rhs_type) {
+                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Sub);
-                        tighter_of_types(&lhs_type, &rhs_type)
+                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!(
                             "Can't subtract values of {:?} and {:?}",
@@ -458,9 +458,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if operator_compatible(&lhs_type, &rhs_type) {
+                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Mul);
-                        tighter_of_types(&lhs_type, &rhs_type)
+                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!(
                             "Can't multiply values of {:?} and {:?}",
@@ -484,9 +484,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if operator_compatible(&lhs_type, &rhs_type) {
+                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Div);
-                        tighter_of_types(&lhs_type, &rhs_type)
+                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!("Can't divide values of {:?} and {:?}", lhs_type, rhs_type);
                     }
@@ -507,9 +507,9 @@ impl BytecodeEngine {
                         var_stack,
                     );
 
-                    if operator_compatible(&lhs_type, &rhs_type) {
+                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Lt);
-                        Ty::Bool
+                        builtin_type::BOOL
                     } else {
                         unimplemented!("Can't compare values of {:?} and {:?}", lhs_type, rhs_type);
                     }
@@ -517,22 +517,26 @@ impl BytecodeEngine {
                 _ => unimplemented!("Unknown operator: {:?}", eb.op),
             },
             Expr::Path(ep) => {
-                let ident = ep.path.segments[0].ident.to_string();
+                if let Some(definition_id) = self.process_path(&ep.path, current_scope_id) {
+                    println!("Found struct: {}", definition_id);
+                    builtin_type::VOID
+                } else {
+                    let ident = ep.path.segments[0].ident.to_string();
+                    let var_id = var_stack.find_var(&ident);
+                    if var_id.is_none() {
+                        unimplemented!("Could not find {}", ident);
+                    }
+                    let var_id = var_id.unwrap();
+                    let var = &var_stack.vars[var_id];
 
-                let var_id = var_stack.find_var(&ident);
-                if var_id.is_none() {
-                    unimplemented!("Could not find {}", ident);
+                    if var.type_id == builtin_type::UNKNOWN {
+                        unimplemented!("{} used before being given a value", ident);
+                    }
+
+                    bytecode.push(Bytecode::Var(var_id));
+
+                    var.type_id
                 }
-                let var_id = var_id.unwrap();
-                let var = &var_stack.vars[var_id];
-
-                if var.ty == Ty::Unknown {
-                    unimplemented!("{} used before being given a value", ident);
-                }
-
-                bytecode.push(Bytecode::Var(var_id));
-
-                var.ty.clone()
             }
             Expr::Call(ec) => match *ec.func {
                 Expr::Path(ref ep) => {
@@ -545,7 +549,7 @@ impl BytecodeEngine {
                             var_stack,
                         );
                         bytecode.push(Bytecode::DebugPrint);
-                        Ty::Void
+                        builtin_type::VOID
                     } else {
                         // If we're in a single ident path, check values in scope
                         if ep.path.segments.len() == 1 && ep.path.leading_colon.is_none() {
@@ -555,17 +559,24 @@ impl BytecodeEngine {
                                 //TODO: FIXME: in the future check this for lambda
                                 unimplemented!(
                                     "Can not call function on type {:?}",
-                                    var_stack.vars[var_id].ty
+                                    var_stack.vars[var_id].type_id
                                 );
                             }
                         }
 
                         let definition_id = self.process_path(&ep.path, current_scope_id);
 
+                        if definition_id.is_none() {
+                            unimplemented!("Could not find call for {:?}", ep.path);
+                        }
+
+                        //TODO: FIXME: please don't do this
+                        let definition_id = definition_id.unwrap();
+
                         if let Definition::Processed(Processed::Fun(ref target_fn)) =
                             self.definitions[definition_id]
                         {
-                            let return_ty = target_fn.return_ty.clone();
+                            let return_type_id = target_fn.return_type_id;
 
                             for arg in &ec.args {
                                 self.convert_expr_to_bytecode(
@@ -579,7 +590,7 @@ impl BytecodeEngine {
 
                             bytecode.push(Bytecode::Call(definition_id));
 
-                            return_ty
+                            return_type_id
                         } else {
                             unimplemented!(
                                 "Processed function {:?} did not process correctly",
@@ -594,15 +605,15 @@ impl BytecodeEngine {
         }
     }
 
-    fn resolve_type(&mut self, tp: &Type) -> Ty {
+    fn resolve_type(&mut self, tp: &Type) -> TypeId {
         match *tp {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
-                "u64" => Ty::U64,
-                "u32" => Ty::U32,
-                "bool" => Ty::Bool,
-                _ => Ty::Error,
+                "u64" => builtin_type::U64,
+                "u32" => builtin_type::U32,
+                "bool" => builtin_type::BOOL,
+                _ => builtin_type::ERROR,
             },
-            _ => Ty::Error,
+            _ => builtin_type::ERROR,
         }
     }
 }

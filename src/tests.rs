@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_mod_bad01() {
-        run_bad_test("mod_bad01.rs", "not found in module");
+        run_bad_test("mod_bad01.rs", "Can not find mod");
     }
 
     #[test]

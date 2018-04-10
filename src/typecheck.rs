@@ -1,71 +1,87 @@
-use std::fmt;
+pub(crate) type TypeId = usize;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Ty {
-    U64,
-    U32,
-    Bool,
-    Error,
-    Void,
-    Unknown,
-    UnknownInt,
+pub mod builtin_type {
+    use super::*;
+    pub const UNKNOWN: TypeId = 0;
+    pub const UNKNOWN_INT: TypeId = 1;
+    pub const VOID: TypeId = 2;
+    pub const U64: TypeId = 3;
+    pub const U32: TypeId = 4;
+    pub const BOOL: TypeId = 5;
+    pub const ERROR: TypeId = 6;
 }
 
-impl fmt::Display for Ty {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Ty::U64 => "u64",
-                Ty::U32 => "u32",
-                Ty::Bool => "bool",
-                Ty::Error => "{error}",
-                Ty::Void => "void",
-                Ty::Unknown => "{unknown}",
-                Ty::UnknownInt => "{integer}",
-            }
-        )
-    }
+struct TypeInfo;
+
+pub struct TypeChecker {
+    types: Vec<TypeInfo>,
 }
 
-pub(crate) fn operator_compatible(lhs: &Ty, rhs: &Ty) -> bool {
-    match (lhs, rhs) {
-        (Ty::U64, Ty::U64)
-        | (Ty::U32, Ty::U32)
-        | (Ty::U64, Ty::UnknownInt)
-        | (Ty::U32, Ty::UnknownInt)
-        | (Ty::UnknownInt, Ty::U64)
-        | (Ty::UnknownInt, Ty::U32)
-        | (Ty::UnknownInt, Ty::UnknownInt) => true,
-        _ => false,
-    }
-}
+impl TypeChecker {
+    pub fn new() -> TypeChecker {
+        let mut types = vec![];
 
-pub(crate) fn assignment_compatible(lhs: &Ty, rhs: &Ty) -> bool {
-    if lhs == rhs {
-        return true;
-    }
-    match (lhs, rhs) {
-        (Ty::U64, Ty::UnknownInt)
-        | (Ty::Unknown, _)
-        | (Ty::U32, Ty::UnknownInt)
-        | (Ty::UnknownInt, Ty::U64)
-        | (Ty::UnknownInt, Ty::U32) => true,
-        _ => false,
-    }
-}
+        for _ in 0..builtin_type::ERROR {
+            types.push(TypeInfo);
+        }
 
-pub(crate) fn tighter_of_types(lhs: &Ty, rhs: &Ty) -> Ty {
-    match (lhs, rhs) {
-        (Ty::U64, _) => Ty::U64,
-        (Ty::U32, _) => Ty::U32,
-        (Ty::Bool, _) => Ty::Bool,
-        (_, Ty::U64) => Ty::U64,
-        (_, Ty::U32) => Ty::U32,
-        (_, Ty::Bool) => Ty::Bool,
-        (Ty::Unknown, rhs) => rhs.clone(),
-        (lhs, Ty::Unknown) => lhs.clone(),
-        _ => lhs.clone(),
+        TypeChecker {
+            types
+        }
+    }
+
+    pub fn printable_name(&self, type_id: TypeId) -> String {
+        match type_id {
+            builtin_type::UNKNOWN => "{unknown}".into(),
+            builtin_type::UNKNOWN_INT => "{unknown int}".into(),
+            builtin_type::VOID => "void".into(),
+            builtin_type::U64 => "u64".into(),
+            builtin_type::U32 => "u32".into(),
+            builtin_type::BOOL => "bool".into(),
+            builtin_type::ERROR => "{error}".into(),
+            _ => format!("{{custom type: {} }}", type_id),
+        }
+    }
+
+    pub(crate) fn operator_compatible(&self, lhs: TypeId, rhs: TypeId) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        match (lhs, rhs) {
+            | (builtin_type::U64, builtin_type::UNKNOWN_INT)
+            | (builtin_type::U32, builtin_type::UNKNOWN_INT)
+            | (builtin_type::UNKNOWN_INT, builtin_type::U64)
+            | (builtin_type::UNKNOWN_INT, builtin_type::U32)
+            | (builtin_type::UNKNOWN_INT, builtin_type::UNKNOWN_INT) => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn assignment_compatible(&self, lhs: TypeId, rhs: TypeId) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        match (lhs, rhs) {
+            (builtin_type::U64, builtin_type::UNKNOWN_INT)
+            | (builtin_type::UNKNOWN, _)
+            | (builtin_type::U32, builtin_type::UNKNOWN_INT)
+            | (builtin_type::UNKNOWN_INT, builtin_type::U64)
+            | (builtin_type::UNKNOWN_INT, builtin_type::U32) => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn tighter_of_types(&self, lhs: TypeId, rhs: TypeId) -> TypeId {
+        match (lhs, rhs) {
+            (builtin_type::U64, _) => builtin_type::U64,
+            (builtin_type::U32, _) => builtin_type::U32,
+            (builtin_type::BOOL, _) => builtin_type::BOOL,
+            (_, builtin_type::U64) => builtin_type::U64,
+            (_, builtin_type::U32) => builtin_type::U32,
+            (_, builtin_type::BOOL) => builtin_type::BOOL,
+            (builtin_type::UNKNOWN, rhs) => rhs.clone(),
+            (lhs, builtin_type::UNKNOWN) => lhs.clone(),
+            _ => lhs.clone(),
+        }
     }
 }

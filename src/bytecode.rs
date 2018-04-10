@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
-use syn::{self, Item, ItemFn, ItemMod};
+use syn::{self, Item, ItemFn, ItemMod, ItemStruct};
 
-use typecheck::Ty;
+use typecheck::{builtin_type, TypeChecker, TypeId};
+
+pub(crate) type ScopeId = usize;
+pub(crate) type DefinitionId = usize;
 
 type VarId = usize;
 type Offset = usize;
@@ -24,9 +27,9 @@ pub enum Bytecode {
     Var(VarId),
     Assign(VarId),
     Call(DefinitionId),
-    If(Offset, Ty), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
-    Else(Offset, Ty), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
-    EndIf(Ty),        //includes the type of the result, if this is an expression
+    If(Offset, TypeId), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
+    Else(Offset, TypeId), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
+    EndIf(TypeId),        //includes the type of the result, if this is an expression
     BeginWhile,
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
     EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
@@ -37,11 +40,11 @@ pub enum Bytecode {
 pub struct Param {
     pub name: String,
     pub(crate) var_id: VarId,
-    pub ty: Ty,
+    pub type_id: TypeId,
 }
 impl Param {
-    pub fn new(name: String, var_id: VarId, ty: Ty) -> Param {
-        Param { name, var_id, ty }
+    pub fn new(name: String, var_id: VarId, type_id: TypeId) -> Param {
+        Param { name, var_id, type_id }
     }
 }
 
@@ -49,12 +52,12 @@ impl Param {
 #[derive(Clone, Debug)]
 pub struct VarDecl {
     pub ident: String,
-    pub ty: Ty,
+    pub type_id: TypeId,
 }
 
 impl VarDecl {
-    fn new(ident: String, ty: Ty) -> VarDecl {
-        VarDecl { ident, ty }
+    fn new(ident: String, type_id: TypeId) -> VarDecl {
+        VarDecl { ident, type_id }
     }
 }
 
@@ -72,8 +75,8 @@ impl VarStack {
         }
     }
 
-    pub(crate) fn add_var(&mut self, ident: String, ty: Ty) -> usize {
-        self.vars.push(VarDecl::new(ident, ty));
+    pub(crate) fn add_var(&mut self, ident: String, type_id: TypeId) -> usize {
+        self.vars.push(VarDecl::new(ident, type_id));
         let pos = self.vars.len() - 1;
         self.var_stack.push(pos);
         pos
@@ -93,7 +96,7 @@ impl VarStack {
 #[derive(Debug, Clone)]
 pub struct Fun {
     pub params: Vec<Param>,
-    pub return_ty: Ty,
+    pub return_type_id: TypeId,
     pub vars: Vec<VarDecl>,
     pub bytecode: Vec<Bytecode>,
 }
@@ -108,19 +111,28 @@ impl Mod {
     }
 }
 
-pub(crate) type ScopeId = usize;
-pub(crate) type DefinitionId = usize;
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub fields: Vec<VarDecl>
+}
+impl Struct {
+    fn new() -> Struct {
+        Struct { fields: vec![] }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lazy {
     ItemFn(ItemFn),
     ItemMod(ItemMod),
+    ItemStruct(ItemStruct),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum Processed {
     Fun(Fun),
     Mod(Mod),
+    Struct(Struct),
 }
 
 #[derive(Clone, Debug)]
@@ -164,6 +176,9 @@ pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) definitions: Vec<Definition>,
     pub(crate) project_root: Option<::std::path::PathBuf>,
+    
+    //TODO: FIXME: probably want to make this pub(crate) at some point
+    pub typechecker: TypeChecker,
 }
 
 impl BytecodeEngine {
@@ -176,13 +191,18 @@ impl BytecodeEngine {
             }],
             definitions: vec![],
             project_root: None,
+            typechecker: TypeChecker::new(),
         }
     }
 
     /// Will find the definition id for the given name, by starting at the scope given and working up through the scopes
     /// until the matching definition is found.
     /// Returns the corresponding definition id with the scope it was found in
-    fn get_defn(&self, defn_name: &str, starting_scope_id: ScopeId) -> (DefinitionId, ScopeId) {
+    pub(crate) fn get_defn(
+        &self,
+        defn_name: &str,
+        starting_scope_id: ScopeId,
+    ) -> Option<(DefinitionId, ScopeId)> {
         let mut current_scope_id = starting_scope_id;
 
         while !self.scopes[current_scope_id]
@@ -190,33 +210,33 @@ impl BytecodeEngine {
             .contains_key(defn_name)
         {
             if self.scopes[current_scope_id].is_mod {
-                unimplemented!(
-                    "Definition {} not found in module (or needs to be precomputed)",
-                    defn_name
-                );
+                return None;
             }
             if let Some(parent_id) = self.scopes[current_scope_id].parent {
                 current_scope_id = parent_id;
             } else {
-                unimplemented!("Definition {} needs to be precomputed", defn_name);
+                return None;
             }
         }
 
-        (
+        Some((
             self.scopes[current_scope_id].definitions[defn_name],
             current_scope_id,
-        )
+        ))
     }
 
     /// Gets the bytecoded function for the given name
     pub fn get_fn(&self, defn_name: &str, scope_id: ScopeId) -> &Fun {
-        let (defn_id, _) = self.get_defn(defn_name, scope_id);
-        let defn = &self.definitions[defn_id];
+        if let Some((defn_id, _)) = self.get_defn(defn_name, scope_id) {
+            let defn = &self.definitions[defn_id];
 
-        if let Definition::Processed(Processed::Fun(ref p)) = defn {
-            p
+            if let Definition::Processed(Processed::Fun(ref p)) = defn {
+                p
+            } else {
+                unimplemented!("Function {:?} needs to be precomputed", defn)
+            }
         } else {
-            unimplemented!("Function {:?} needs to be precomputed", defn)
+            unimplemented!("Function {} could not be found", defn_name);
         }
     }
 
@@ -338,6 +358,15 @@ impl BytecodeEngine {
 
                 self.process_use_tree(&item_use.tree, current_scope_id, temp_scope_id);
             }
+            Item::Struct(item_struct) => {
+                let ident = item_struct.ident.to_string();
+
+                self.definitions
+                    .push(Definition::Lazy(Lazy::ItemStruct(item_struct)));
+                self.scopes[current_scope_id]
+                    .definitions
+                    .insert(ident, self.definitions.len() - 1);
+            }
             _ => {
                 unimplemented!("Unknown item type: {:#?}", item);
             }
@@ -347,45 +376,69 @@ impl BytecodeEngine {
     /// Begin processing the lazy definitions starting at the given function.
     /// This will continue processing until all necessary definitions have been processed.
     pub fn process_fn(&mut self, fn_name: &str, scope_id: ScopeId) -> DefinitionId {
-        let (definition_id, found_scope_id) = self.get_defn(fn_name, scope_id);
+        if let Some((definition_id, found_scope_id)) = self.get_defn(fn_name, scope_id) {
+            let fun = self.convert_fn_to_bytecode(definition_id, found_scope_id);
+            self.definitions[definition_id] = Definition::Processed(Processed::Fun(fun));
 
-        let fun = self.convert_fn_to_bytecode(definition_id, found_scope_id);
-        self.definitions[definition_id] = Definition::Processed(Processed::Fun(fun));
+            definition_id
+        } else {
+            unimplemented!("Can not find function {}", fn_name);
+        }
 
-        definition_id
+    }
+
+    fn process_struct(&mut self, struct_name: &str, scope_id: ScopeId) -> DefinitionId {
+        if let Some((definition_id, _found_scope_id)) = self.get_defn(struct_name, scope_id) {
+            if let Definition::Lazy(Lazy::ItemStruct(ref _item_struct)) =
+                self.definitions[definition_id]
+            {
+                let s = Struct::new();
+                self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
+            }
+
+            definition_id
+        } else {
+            unimplemented!("Can not find struct {}", struct_name);
+        }
     }
 
     fn process_mod(&mut self, mod_name: &str, scope_id: ScopeId) -> DefinitionId {
-        let (definition_id, current_scope_id) = self.get_defn(mod_name, scope_id);
+        if let Some((definition_id, current_scope_id)) = self.get_defn(mod_name, scope_id) {
+            if let Definition::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id] {
+                self.scopes.push(Scope::new(Some(current_scope_id), true));
+                let mod_scope_id = self.scopes.len() - 1;
 
-        if let Definition::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id] {
-            self.scopes.push(Scope::new(Some(current_scope_id), true));
-            let mod_scope_id = self.scopes.len() - 1;
+                match item_mod.content {
+                    //TODO: would be great if we didn't clone here and just reused what we had
+                    Some(ref content) => for item in content.1.clone() {
+                        self.prepare_item(item, mod_scope_id);
+                    },
+                    None => {}
+                }
 
-            match item_mod.content {
-                //TODO: would be great if we didn't clone here and just reused what we had
-                Some(ref content) => for item in content.1.clone() {
-                    self.prepare_item(item, mod_scope_id);
-                },
-                None => {}
+                self.definitions[definition_id] =
+                    Definition::Processed(Processed::Mod(Mod::new(mod_scope_id)));
             }
-
-            self.definitions[definition_id] =
-                Definition::Processed(Processed::Mod(Mod::new(mod_scope_id)));
+            definition_id
+        } else {
+            unimplemented!("Can not find mod {}", mod_name);
         }
-        definition_id
     }
 
-    fn process_defn(&mut self, name: &str, scope_id: ScopeId) -> DefinitionId {
-        let (definition_id, scope_id) = self.get_defn(name, scope_id);
-
-        if let Definition::Lazy(ref lazy) = self.definitions[definition_id] {
-            match lazy {
-                Lazy::ItemFn(_) => self.process_fn(name, scope_id),
-                Lazy::ItemMod(_) => self.process_mod(name, scope_id),
+    fn process_defn(&mut self, name: &str, scope_id: ScopeId) -> Option<DefinitionId> {
+        if let Some((definition_id, scope_id)) = self.get_defn(name, scope_id) {
+            if let Definition::Lazy(ref lazy) = self.definitions[definition_id] {
+                let result = match lazy {
+                    Lazy::ItemFn(_) => self.process_fn(name, scope_id),
+                    Lazy::ItemMod(_) => self.process_mod(name, scope_id),
+                    Lazy::ItemStruct(_) => self.process_struct(name, scope_id),
+                };
+                Some(result)
+            } else {
+                Some(definition_id)
             }
         } else {
-            definition_id
+            None
         }
     }
 
@@ -395,7 +448,7 @@ impl BytecodeEngine {
         &mut self,
         path: &syn::Path,
         current_scope_id: ScopeId,
-    ) -> DefinitionId {
+    ) -> Option<DefinitionId> {
         let mut mod_scope_id = current_scope_id;
         if path.leading_colon.is_some() {
             loop {
@@ -439,9 +492,13 @@ impl BytecodeEngine {
             syn::UseTree::Name(ref use_name) => {
                 let definition_id = self.process_defn(use_name.ident.as_ref(), current_scope_id);
 
+                if definition_id.is_none() {
+                    unimplemented!("Could not process the definition for {}", use_name.ident.as_ref());
+                }
+
                 self.scopes[original_scope_id]
                     .definitions
-                    .insert(use_name.ident.to_string(), definition_id);
+                    .insert(use_name.ident.to_string(), definition_id.unwrap());
             }
             syn::UseTree::Path(ref use_path) => {
                 let definition_id = self.process_mod(use_path.ident.as_ref(), current_scope_id);
@@ -467,17 +524,25 @@ impl BytecodeEngine {
                 for defn_name in defn_names {
                     let definition_id = self.process_defn(&defn_name, current_scope_id);
 
+                    if definition_id.is_none() {
+                        unimplemented!("Could not process the definition for {}", defn_name);
+                    }
+
                     self.scopes[original_scope_id]
                         .definitions
-                        .insert(defn_name, definition_id);
+                        .insert(defn_name, definition_id.unwrap());
                 }
             }
             syn::UseTree::Rename(ref use_rename) => {
                 let definition_id = self.process_defn(use_rename.ident.as_ref(), current_scope_id);
 
+                if definition_id.is_none() {
+                    unimplemented!("Could not process the definition for {}", use_rename.ident.as_ref());
+                }
+
                 self.scopes[original_scope_id]
                     .definitions
-                    .insert(use_rename.rename.to_string(), definition_id);
+                    .insert(use_rename.rename.to_string(), definition_id.unwrap());
             }
         }
     }
@@ -489,12 +554,12 @@ impl BytecodeEngine {
         expr_str: &str,
         bytecode: &mut Vec<Bytecode>,
         var_stack: &mut VarStack,
-    ) -> Result<Ty, String> {
+    ) -> Result<TypeId, String> {
         match syn::parse_str::<syn::Expr>(expr_str) {
             Ok(expr) => {
                 Ok(self.convert_expr_to_bytecode(
                     &expr,
-                    &Ty::Unknown,
+                    builtin_type::UNKNOWN,
                     bytecode,
                     0, // hardwire repl scope to 0
                     var_stack,
@@ -523,7 +588,7 @@ impl BytecodeEngine {
                     _ => {
                         self.convert_stmt_to_bytecode(
                             &stmt,
-                            &Ty::Unknown,
+                            builtin_type::UNKNOWN,
                             bytecode,
                             0, // hardwire repl scope to 0
                             var_stack,
