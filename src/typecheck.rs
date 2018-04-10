@@ -30,6 +30,16 @@ impl TypeChecker {
         }
     }
 
+    pub fn new_type(&mut self) -> TypeId {
+        self.types.push(TypeInfo);
+
+        self.types.len() - 1
+    }
+
+    pub fn is_custom_type(&self, type_id: TypeId) -> bool {
+        type_id > builtin_type::ERROR
+    }
+
     pub fn printable_name(&self, type_id: TypeId) -> String {
         match type_id {
             builtin_type::UNKNOWN => "{unknown}".into(),

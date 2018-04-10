@@ -33,7 +33,7 @@ pub enum Bytecode {
     BeginWhile,
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
     EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
-    DebugPrint,
+    DebugPrint(TypeId),
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +44,11 @@ pub struct Param {
 }
 impl Param {
     pub fn new(name: String, var_id: VarId, type_id: TypeId) -> Param {
-        Param { name, var_id, type_id }
+        Param {
+            name,
+            var_id,
+            type_id,
+        }
     }
 }
 
@@ -113,11 +117,15 @@ impl Mod {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub fields: Vec<VarDecl>
+    pub fields: Vec<VarDecl>,
+    pub type_id: TypeId,
 }
 impl Struct {
-    fn new() -> Struct {
-        Struct { fields: vec![] }
+    fn new(type_id: TypeId) -> Struct {
+        Struct {
+            fields: vec![],
+            type_id,
+        }
     }
 }
 
@@ -176,7 +184,7 @@ pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) definitions: Vec<Definition>,
     pub(crate) project_root: Option<::std::path::PathBuf>,
-    
+
     //TODO: FIXME: probably want to make this pub(crate) at some point
     pub typechecker: TypeChecker,
 }
@@ -384,7 +392,6 @@ impl BytecodeEngine {
         } else {
             unimplemented!("Can not find function {}", fn_name);
         }
-
     }
 
     fn process_struct(&mut self, struct_name: &str, scope_id: ScopeId) -> DefinitionId {
@@ -392,7 +399,8 @@ impl BytecodeEngine {
             if let Definition::Lazy(Lazy::ItemStruct(ref _item_struct)) =
                 self.definitions[definition_id]
             {
-                let s = Struct::new();
+                let type_id = self.typechecker.new_type();
+                let s = Struct::new(type_id);
                 self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
             }
 
@@ -493,7 +501,10 @@ impl BytecodeEngine {
                 let definition_id = self.process_defn(use_name.ident.as_ref(), current_scope_id);
 
                 if definition_id.is_none() {
-                    unimplemented!("Could not process the definition for {}", use_name.ident.as_ref());
+                    unimplemented!(
+                        "Could not process the definition for {}",
+                        use_name.ident.as_ref()
+                    );
                 }
 
                 self.scopes[original_scope_id]
@@ -537,7 +548,10 @@ impl BytecodeEngine {
                 let definition_id = self.process_defn(use_rename.ident.as_ref(), current_scope_id);
 
                 if definition_id.is_none() {
-                    unimplemented!("Could not process the definition for {}", use_rename.ident.as_ref());
+                    unimplemented!(
+                        "Could not process the definition for {}",
+                        use_rename.ident.as_ref()
+                    );
                 }
 
                 self.scopes[original_scope_id]

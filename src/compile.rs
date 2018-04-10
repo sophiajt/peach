@@ -40,13 +40,12 @@ fn codegen_type(type_id: TypeId) -> String {
         builtin_type::UNKNOWN_INT => "int".into(),
         builtin_type::VOID => "void".into(),
         builtin_type::BOOL => "bool".into(),
-        _ => unimplemented!("Can't codegen type: {:?}", type_id),
+        type_id => {
+            //For now, let's assume all custom types are structs
+            format!("struct struct_{}", type_id)
+        }
     };
     codegen_ty
-}
-
-fn codegen_fn_header(fn_name: &str, fun: &Fun) -> String {
-    format!("{} {}();\n", codegen_type(fun.return_type_id), fn_name)
 }
 
 fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) {
@@ -177,6 +176,11 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                         cfile.expression_stack.pop();
                     }
                     cfile.delay_expr(expr_string);
+                } else if let Definition::Processed(Processed::Struct(ref s)) =
+                    bc.definitions[*definition_id]
+                {
+                    let expr_string = format!("init_struct_{}()", s.type_id);
+                    cfile.delay_expr(expr_string);
                 } else {
                     unimplemented!("Attempt to call unprocessed function");
                 }
@@ -226,9 +230,26 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             Bytecode::EndWhile(_) => {
                 cfile.codegen_stmt("}\n");
             }
-            Bytecode::DebugPrint => {
+            Bytecode::DebugPrint(type_id) => {
                 let val = cfile.expression_stack.pop().unwrap();
-                cfile.codegen_stmt(&format!("printf(\"DEBUG: %u\\n\", ({}));\n", val));
+                let result = match *type_id {
+                    builtin_type::VOID => {
+                        "DEBUG: <void>".into()
+                    }
+                    builtin_type::UNKNOWN => {
+                        "DEBUG: <unknown>".into()
+                    }
+                    builtin_type::BOOL |
+                    builtin_type::U32 |
+                    builtin_type::U64 |
+                    builtin_type::UNKNOWN_INT  => {
+                        format!("printf(\"DEBUG: %u\\n\", ({}));\n", val)
+                    }
+                    _ => {
+                        format!("printf(\"DEBUG: <custom type:%u>\\n\", ({}));\n", type_id)
+                    }
+                };
+                cfile.codegen_stmt(&result);
             }
         }
     }
@@ -260,11 +281,18 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     let starting_fn_id = bc.scopes[0].definitions["main"];
 
+    //TODO: FIXME: just make two separate strings and concat them rather than iterating twice
     for definition_id in 0..bc.definitions.len() {
         if let Definition::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
             if definition_id != starting_fn_id {
-                cfile.codegen_raw(&codegen_fn_header(&format!("fun_{}", definition_id), fun));
+                let header = format!("{} fun_{}();\n", codegen_type(fun.return_type_id), definition_id);
+                cfile.codegen_raw(&header);
             }
+        } else if let Definition::Processed(Processed::Struct(ref s)) = bc.definitions[definition_id] {
+            let struct_line = format!("struct struct_{};\n", s.type_id);
+            cfile.codegen_raw(&struct_line);
+            let struct_init_line = format!("{} init_struct_{}();\n", codegen_type(s.type_id), s.type_id);
+            cfile.codegen_raw(&struct_init_line);
         }
     }
 
@@ -275,6 +303,14 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
             } else {
                 codegen_fn(&mut cfile, bc, &format!("fun_{}", definition_id), fun);
             }
+        } else if let Definition::Processed(Processed::Struct(ref s)) = bc.definitions[definition_id] {
+            let struct_line = format!("struct struct_{} {{int dummy;}};\n", s.type_id);
+            cfile.codegen_raw(&struct_line);
+            let mut struct_init_line = format!("{} init_struct_{}(){{\n", codegen_type(s.type_id), s.type_id);
+            struct_init_line += &format!("{} temp;\n", codegen_type(s.type_id));
+            struct_init_line += "return temp;\n";
+            struct_init_line += "}\n";
+            cfile.codegen_raw(&struct_init_line);
         }
     }
 

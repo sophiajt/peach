@@ -518,8 +518,12 @@ impl BytecodeEngine {
             },
             Expr::Path(ep) => {
                 if let Some(definition_id) = self.process_path(&ep.path, current_scope_id) {
-                    println!("Found struct: {}", definition_id);
-                    builtin_type::VOID
+                    if let Definition::Processed(Processed::Struct(ref s)) = self.definitions[definition_id] {
+                        bytecode.push(Bytecode::Call(definition_id));
+                        s.type_id
+                    } else {
+                        unimplemented!("Unsupport definition type in struct call");
+                    }
                 } else {
                     let ident = ep.path.segments[0].ident.to_string();
                     let var_id = var_stack.find_var(&ident);
@@ -541,14 +545,14 @@ impl BytecodeEngine {
             Expr::Call(ec) => match *ec.func {
                 Expr::Path(ref ep) => {
                     if ep.path.segments.len() == 1 && ep.path.segments[0].ident == "__debug__" {
-                        self.convert_expr_to_bytecode(
+                        let type_id = self.convert_expr_to_bytecode(
                             &ec.args[0],
                             expected_return_type,
                             bytecode,
                             current_scope_id,
                             var_stack,
                         );
-                        bytecode.push(Bytecode::DebugPrint);
+                        bytecode.push(Bytecode::DebugPrint(type_id));
                         builtin_type::VOID
                     } else {
                         // If we're in a single ident path, check values in scope

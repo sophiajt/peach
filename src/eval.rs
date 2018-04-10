@@ -9,6 +9,7 @@ pub enum Value {
     Bool(bool),
     Error,
     Void,
+    Object(HashMap<String, Value>)
 }
 
 impl fmt::Display for Value {
@@ -22,6 +23,7 @@ impl fmt::Display for Value {
                 Value::Bool(b) => b.to_string(),
                 Value::Error => "error".to_string(),
                 Value::Void => "void".to_string(),
+                Value::Object(dict) => format!("object: {:?}", dict),
             }
         )
     }
@@ -153,11 +155,15 @@ pub fn eval_block_bytecode(
                 {
                     let result = eval_fn_bytecode(bc, target_fun, value_stack, debug_capture);
                     value_stack.push(result);
+                } else if let Definition::Processed(Processed::Struct(_)) =
+                    bc.definitions[*definition_id]
+                {
+                    value_stack.push(Value::Object(HashMap::new()))
                 } else {
                     unimplemented!("Eval of unprocessed function");
                 }
             }
-            Bytecode::DebugPrint => match value_stack.pop() {
+            Bytecode::DebugPrint(_) => match value_stack.pop() {
                 Some(s) => match debug_capture {
                     Some(ref mut debug_log) => {
                         debug_log.push_str(&format!("DEBUG: {:?}\n", s));

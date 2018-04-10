@@ -315,6 +315,12 @@ mod tests {
     }
 
     #[test]
+    fn test_struct01() {
+        //TODO: FIXME: we can't predict type ids in the future
+        run_test("struct01.rs", "DEBUG: Object({})", "DEBUG: <custom type:6>");
+    }
+
+    #[test]
     fn test_scope_bad01() {
         run_bad_test("scope_bad01.rs", "Can not call function");
     }
