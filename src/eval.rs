@@ -1,6 +1,7 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
 use std::collections::HashMap;
 use std::fmt;
+use typecheck::TypeInfo;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -9,7 +10,7 @@ pub enum Value {
     Bool(bool),
     Error,
     Void,
-    Object(HashMap<String, Value>)
+    Object(HashMap<String, Value>),
 }
 
 impl fmt::Display for Value {
@@ -93,6 +94,19 @@ pub fn eval_block_bytecode(
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
+            Bytecode::Dot(field) => match value_stack.pop() {
+                Some(Value::Object(obj)) => {
+                    if obj.contains_key(field) {
+                        value_stack.push(obj[field].clone())
+                    } else {
+                        println!("{:#?}", obj);
+                        unimplemented!("Can not find field {} in object", field);
+                    }
+                }
+                _ => {
+                    unimplemented!("Dot access on value that isn't an object");
+                }
+            },
             Bytecode::PushU64(val) => {
                 value_stack.push(Value::U64(*val));
             }
@@ -155,10 +169,22 @@ pub fn eval_block_bytecode(
                 {
                     let result = eval_fn_bytecode(bc, target_fun, value_stack, debug_capture);
                     value_stack.push(result);
-                } else if let Definition::Processed(Processed::Struct(_)) =
+                } else if let Definition::Processed(Processed::Struct(ref s)) =
                     bc.definitions[*definition_id]
                 {
-                    value_stack.push(Value::Object(HashMap::new()))
+                    if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
+                        let mut hash = HashMap::new();
+                        for field in st.fields.iter().rev() {
+                            if let Some(val) = value_stack.pop() {
+                                hash.insert(field.0.clone(), val);
+                            } else {
+                                unimplemented!("Could not match struct fields with expected");
+                            }
+                        }
+                        value_stack.push(Value::Object(hash))
+                    } else {
+                        unimplemented!("Can not find struct type for object");
+                    }
                 } else {
                     unimplemented!("Eval of unprocessed function");
                 }

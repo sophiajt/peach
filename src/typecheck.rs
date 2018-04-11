@@ -11,10 +11,17 @@ pub mod builtin_type {
     pub const ERROR: TypeId = 6;
 }
 
-struct TypeInfo;
+pub(crate) struct StructType {
+    pub(crate) fields: Vec<(String, TypeId)>,
+}
+
+pub(crate) enum TypeInfo {
+    Builtin,
+    Struct(StructType),
+}
 
 pub struct TypeChecker {
-    types: Vec<TypeInfo>,
+    pub(crate) types: Vec<TypeInfo>,
 }
 
 impl TypeChecker {
@@ -22,16 +29,14 @@ impl TypeChecker {
         let mut types = vec![];
 
         for _ in 0..builtin_type::ERROR {
-            types.push(TypeInfo);
+            types.push(TypeInfo::Builtin);
         }
 
-        TypeChecker {
-            types
-        }
+        TypeChecker { types }
     }
 
-    pub fn new_type(&mut self) -> TypeId {
-        self.types.push(TypeInfo);
+    pub fn new_struct(&mut self, fields: Vec<(String, TypeId)>) -> TypeId {
+        self.types.push(TypeInfo::Struct(StructType { fields }));
 
         self.types.len() - 1
     }

@@ -321,6 +321,11 @@ mod tests {
     }
 
     #[test]
+    fn test_struct02() {
+        run_test("struct02.rs", "DEBUG: U64(3)", "DEBUG: 3");
+    }
+
+    #[test]
     fn test_scope_bad01() {
         run_bad_test("scope_bad01.rs", "Can not call function");
     }

@@ -11,6 +11,6 @@ time = "*"
 name = "peachlib"
 path = "src/lib.rs"
 
-[[bin]]
-name = "peach"
-path = "src/bin.rs"
+#[[bin]]
+#name = "peach"
+#path = "src/bin.rs"

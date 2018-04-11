@@ -1,7 +1,7 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param, Processed,
                Scope, ScopeId, VarStack};
-use syn::{BinOp, Block, Expr, FnArg, IntSuffix, Lit, Pat, ReturnType, Stmt, Type};
-use typecheck::{builtin_type, TypeId};
+use syn::{BinOp, Block, Expr, FnArg, IntSuffix, Lit, Member, Pat, ReturnType, Stmt, Type};
+use typecheck::{builtin_type, TypeId, TypeInfo};
 
 impl BytecodeEngine {
     pub(crate) fn convert_fn_to_bytecode(
@@ -57,7 +57,9 @@ impl BytecodeEngine {
                     _ => bytecode.push(Bytecode::ReturnLastStackValue),
                 }
 
-                if !self.typechecker.assignment_compatible(return_type_id, block_type_id) {
+                if !self.typechecker
+                    .assignment_compatible(return_type_id, block_type_id)
+                {
                     unimplemented!(
                         "Mismatched return types: {:?} and {:?}",
                         block_type_id,
@@ -217,7 +219,9 @@ impl BytecodeEngine {
                     None => builtin_type::VOID,
                 };
 
-                if self.typechecker.assignment_compatible(expected_return_type, actual_return_type) {
+                if self.typechecker
+                    .assignment_compatible(expected_return_type, actual_return_type)
+                {
                     match actual_return_type {
                         builtin_type::VOID => bytecode.push(Bytecode::ReturnVoid),
                         _ => bytecode.push(Bytecode::ReturnLastStackValue),
@@ -286,10 +290,16 @@ impl BytecodeEngine {
                         let var_id = var_id.unwrap();
                         let var = &mut var_stack.vars[var_id];
 
-                        if self.typechecker.assignment_compatible(var.type_id, rhs_type) {
+                        if self.typechecker
+                            .assignment_compatible(var.type_id, rhs_type)
+                        {
                             var.type_id = self.typechecker.tighter_of_types(var.type_id, rhs_type);
                         } else {
-                            unimplemented!("Assignment between {:?} and {:?}", var.type_id, rhs_type);
+                            unimplemented!(
+                                "Assignment between {:?} and {:?}",
+                                var.type_id,
+                                rhs_type
+                            );
                         }
 
                         bytecode.push(Bytecode::Assign(var_id));
@@ -516,9 +526,46 @@ impl BytecodeEngine {
                 }
                 _ => unimplemented!("Unknown operator: {:?}", eb.op),
             },
+            Expr::Struct(es) => {
+                let mut fields = vec![];
+                for field in &es.fields {
+                    match field.member {
+                        Member::Named(name) => {
+                            fields.push((name.to_string(), &field.expr));
+                        }
+                        _ => unimplemented!("Unnamed struct members not yet supported"),
+                    }
+                }
+                //TODO: FIXME: would be great to not have to clone here
+                fields.sort_by_key(|x| x.0.clone());
+
+                for field in fields {
+                    self.convert_expr_to_bytecode(
+                        field.1,
+                        expected_return_type,
+                        bytecode,
+                        current_scope_id,
+                        var_stack,
+                    );
+                }
+                if let Some(definition_id) = self.process_path(&es.path, current_scope_id) {
+                    if let Definition::Processed(Processed::Struct(ref s)) =
+                        self.definitions[definition_id]
+                    {
+                        bytecode.push(Bytecode::Call(definition_id));
+                        s.type_id
+                    } else {
+                        unimplemented!("Unsupport definition type in struct call");
+                    }
+                } else {
+                    unimplemented!("Can't process struct");
+                }
+            }
             Expr::Path(ep) => {
                 if let Some(definition_id) = self.process_path(&ep.path, current_scope_id) {
-                    if let Definition::Processed(Processed::Struct(ref s)) = self.definitions[definition_id] {
+                    if let Definition::Processed(Processed::Struct(ref s)) =
+                        self.definitions[definition_id]
+                    {
                         bytecode.push(Bytecode::Call(definition_id));
                         s.type_id
                     } else {
@@ -605,11 +652,46 @@ impl BytecodeEngine {
                 }
                 _ => unimplemented!("unknown function call type: {:#?}", ec.func),
             },
+            Expr::Field(ef) => {
+                let type_id = self.convert_expr_to_bytecode(
+                    &*ef.base,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    var_stack,
+                );
+
+                if let TypeInfo::Struct(ref st) = self.typechecker.types[type_id] {
+                    match ef.member {
+                        Member::Named(ident) => {
+                            bytecode.push(Bytecode::Dot(ident.to_string()));
+                            for field in &st.fields {
+                                if field.0 == ident.as_ref() {
+                                    return field.1;
+                                }
+                            }
+                            unimplemented!("Field access of {} not found", ident);
+                        }
+                        _ => unimplemented!("Unsupported member access"),
+                    }
+                } else {
+                    unimplemented!("Member access on non-struct types");
+                }
+                /*
+                if let Some(definition_id) = self.process_path(&ef.base, current_scope_id) {
+                    if let Definition::Processed(Processed::Struct(ref s)) =
+                        self.definitions[definition_id]
+                    {}
+                } else {
+                    unimplemented!("Can't field access on non-structure");
+                }
+                */
+            }
             _ => unimplemented!("Unknown expr type: {:#?}", expr),
         }
     }
 
-    fn resolve_type(&mut self, tp: &Type) -> TypeId {
+    pub(crate) fn resolve_type(&self, tp: &Type) -> TypeId {
         match *tp {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
                 "u64" => builtin_type::U64,

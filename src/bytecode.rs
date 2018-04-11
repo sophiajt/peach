@@ -22,6 +22,7 @@ pub enum Bytecode {
     Mul,
     Div,
     Lt,
+    Dot(String),
     VarDecl(VarId),
     VarDeclUninit(VarId),
     Var(VarId),
@@ -53,7 +54,7 @@ impl Param {
 }
 
 //TODO: should VarDecl and Param be merged?
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Ord, Eq, PartialOrd, PartialEq)]
 pub struct VarDecl {
     pub ident: String,
     pub type_id: TypeId,
@@ -117,15 +118,11 @@ impl Mod {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub fields: Vec<VarDecl>,
     pub type_id: TypeId,
 }
 impl Struct {
     fn new(type_id: TypeId) -> Struct {
-        Struct {
-            fields: vec![],
-            type_id,
-        }
+        Struct { type_id }
     }
 }
 
@@ -396,10 +393,16 @@ impl BytecodeEngine {
 
     fn process_struct(&mut self, struct_name: &str, scope_id: ScopeId) -> DefinitionId {
         if let Some((definition_id, _found_scope_id)) = self.get_defn(struct_name, scope_id) {
-            if let Definition::Lazy(Lazy::ItemStruct(ref _item_struct)) =
+            if let Definition::Lazy(Lazy::ItemStruct(ref item_struct)) =
                 self.definitions[definition_id]
             {
-                let type_id = self.typechecker.new_type();
+                let mut fields: Vec<(String, TypeId)> = vec![];
+                for iter in &item_struct.fields {
+                    let field_ty = self.resolve_type(&iter.ty);
+                    fields.push((iter.ident.unwrap().to_string(), field_ty));
+                }
+
+                let type_id = self.typechecker.new_struct(fields);
                 let s = Struct::new(type_id);
                 self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
             }
