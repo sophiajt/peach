@@ -18,7 +18,7 @@ impl BytecodeEngine {
 
                 let return_type_id = match &item_fn.decl.output {
                     ReturnType::Default => builtin_type::VOID,
-                    ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty),
+                    ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty, scope_id),
                 };
 
                 let mut var_stack = VarStack::new();
@@ -31,7 +31,7 @@ impl BytecodeEngine {
                             match capture.pat {
                                 Pat::Ident(ref pi) => {
                                     let ident = pi.ident.to_string();
-                                    let type_id = self.resolve_type(&capture.ty);
+                                    let type_id = self.resolve_type(&capture.ty, scope_id);
                                     let var_id = var_stack.add_var(ident.clone(), type_id);
                                     params.push(Param::new(ident, var_id, type_id));
                                 }
@@ -57,14 +57,19 @@ impl BytecodeEngine {
                     _ => bytecode.push(Bytecode::ReturnLastStackValue),
                 }
 
-                if !self.typechecker
-                    .assignment_compatible(return_type_id, block_type_id)
-                {
-                    unimplemented!(
-                        "Mismatched return types: {:?} and {:?}",
-                        block_type_id,
-                        return_type_id
-                    );
+                match bytecode.last() {
+                    Some(Bytecode::ReturnVoid) | Some(Bytecode::ReturnLastStackValue) => {}
+                    _ => {
+                        if !self.typechecker
+                            .assignment_compatible(return_type_id, block_type_id)
+                        {
+                            unimplemented!(
+                                "Mismatched return types: {} and {}",
+                                self.typechecker.printable_name(block_type_id),
+                                self.typechecker.printable_name(return_type_id),
+                            );
+                        }
+                    }
                 }
 
                 Fun {
@@ -161,7 +166,7 @@ impl BytecodeEngine {
                                 builtin_type::VOID
                             }
                             Some(ref explicit_ty) => {
-                                let var_ty = self.resolve_type(&*explicit_ty.1);
+                                let var_ty = self.resolve_type(&*explicit_ty.1, current_scope_id);
 
                                 if !self.typechecker.assignment_compatible(var_ty, rhs_ty) {
                                     unimplemented!(
@@ -183,7 +188,7 @@ impl BytecodeEngine {
                                 bytecode.push(Bytecode::VarDeclUninit(var_id));
                             }
                             Some(ref explicit_ty) => {
-                                let var_ty = self.resolve_type(&*explicit_ty.1);
+                                let var_ty = self.resolve_type(&*explicit_ty.1, current_scope_id);
 
                                 let var_id = var_stack.add_var(ident, var_ty);
                                 bytecode.push(Bytecode::VarDeclUninit(var_id));
@@ -219,6 +224,12 @@ impl BytecodeEngine {
                     None => builtin_type::VOID,
                 };
 
+                println!(
+                    "{} vs {}",
+                    self.typechecker.printable_name(expected_return_type),
+                    self.typechecker.printable_name(actual_return_type)
+                );
+
                 if self.typechecker
                     .assignment_compatible(expected_return_type, actual_return_type)
                 {
@@ -228,11 +239,11 @@ impl BytecodeEngine {
                     }
                     builtin_type::VOID
                 } else {
-                    println!(
-                        "Mismatched return types: {:?} and {:?}",
-                        actual_return_type, expected_return_type
+                    unimplemented!(
+                        "Mismatched return types: {} and {}",
+                        actual_return_type,
+                        expected_return_type
                     );
-                    builtin_type::ERROR
                 }
             }
             Expr::Lit(el) => match el.lit {
@@ -683,15 +694,27 @@ impl BytecodeEngine {
         }
     }
 
-    pub(crate) fn resolve_type(&self, tp: &Type) -> TypeId {
+    pub(crate) fn resolve_type(&mut self, tp: &Type, current_scope_id: ScopeId) -> TypeId {
         match *tp {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
                 "u64" => builtin_type::U64,
                 "u32" => builtin_type::U32,
                 "bool" => builtin_type::BOOL,
-                _ => builtin_type::ERROR,
+                _ => {
+                    if let Some(definition_id) = self.process_path(&tp.path, current_scope_id) {
+                        if let Definition::Processed(Processed::Struct(ref s)) =
+                            self.definitions[definition_id]
+                        {
+                            s.type_id
+                        } else {
+                            unimplemented!("Could not find processed struct for type");
+                        }
+                    } else {
+                        unimplemented!("Could not find processed struct for type");
+                    }
+                }
             },
-            _ => builtin_type::ERROR,
+            _ => unimplemented!("Could not resolve type"),
         }
     }
 }

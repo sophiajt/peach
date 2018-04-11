@@ -393,21 +393,25 @@ impl BytecodeEngine {
 
     fn process_struct(&mut self, struct_name: &str, scope_id: ScopeId) -> DefinitionId {
         if let Some((definition_id, _found_scope_id)) = self.get_defn(struct_name, scope_id) {
-            if let Definition::Lazy(Lazy::ItemStruct(ref item_struct)) =
+            let fields_in = if let Definition::Lazy(Lazy::ItemStruct(ref item_struct)) =
                 self.definitions[definition_id]
             {
-                let mut fields: Vec<(String, TypeId)> = vec![];
-                for iter in &item_struct.fields {
-                    let field_ty = self.resolve_type(&iter.ty);
-                    fields.push((iter.ident.unwrap().to_string(), field_ty));
-                }
+                item_struct.fields.clone()
+            } else {
+                unimplemented!("Could not process struct fields");
+            };
 
-                fields.sort();
-
-                let type_id = self.typechecker.new_struct(fields);
-                let s = Struct::new(type_id);
-                self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
+            let mut fields: Vec<(String, TypeId)> = vec![];
+            for iter in &fields_in {
+                let field_ty = self.resolve_type(&iter.ty, scope_id);
+                fields.push((iter.ident.unwrap().to_string(), field_ty));
             }
+
+            fields.sort();
+
+            let type_id = self.typechecker.new_struct(fields);
+            let s = Struct::new(type_id);
+            self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
 
             definition_id
         } else {

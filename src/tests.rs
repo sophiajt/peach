@@ -5,6 +5,7 @@ mod tests {
     use bytecode::BytecodeEngine;
     use compile;
     use eval;
+    use typecheck;
 
     #[allow(dead_code)]
     fn load_to_bc(fname: &str) -> BytecodeEngine {
@@ -316,8 +317,11 @@ mod tests {
 
     #[test]
     fn test_struct01() {
-        //TODO: FIXME: we can't predict type ids in the future
-        run_test("struct01.rs", "DEBUG: Object({})", "DEBUG: <custom type:6>");
+        let custom_type_id_string = format!(
+            "DEBUG: <custom type:{}>",
+            typecheck::builtin_type::ERROR + 1
+        );
+        run_test("struct01.rs", "DEBUG: Object({})", &custom_type_id_string);
     }
 
     #[test]

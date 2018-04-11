@@ -20,17 +20,15 @@ Some possible next steps:
 * (DONE) Playing with the while codegen, I'm noticing we could codegen a bit smarter.  Expressions could come out with paren'd strings inside of other expressions.  Assignments and the like would cap off the codegen.
 * (DONE) if expressions
 * (IN PROGRESS) mod
-*   DONE: correct mod scope traversal
-*   DONE: leading colon
+  * DONE: correct mod scope traversal
+  * DONE: leading colon
 * (DONE) 'use' items
 * (DONE) mod "file":
   * (DONE) Noticed that if this is added, you can load files froms of code from the repl
-
 * All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
 * TODO: mutability check
 * TODO: consistent naming
 * TODO: mod visibility
-* TODO: mod file loading from another dir
 * TODO: Check types of each function argument
 * Add structs and member access
 * Add type inference (we kinda already have it, but it's not like real yet)

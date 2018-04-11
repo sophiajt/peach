@@ -28,7 +28,7 @@ impl TypeChecker {
     pub fn new() -> TypeChecker {
         let mut types = vec![];
 
-        for _ in 0..builtin_type::ERROR {
+        for _ in 0..(builtin_type::ERROR + 1) {
             types.push(TypeInfo::Builtin);
         }
 
