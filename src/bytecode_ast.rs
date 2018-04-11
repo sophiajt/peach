@@ -224,12 +224,6 @@ impl BytecodeEngine {
                     None => builtin_type::VOID,
                 };
 
-                println!(
-                    "{} vs {}",
-                    self.typechecker.printable_name(expected_return_type),
-                    self.typechecker.printable_name(actual_return_type)
-                );
-
                 if self.typechecker
                     .assignment_compatible(expected_return_type, actual_return_type)
                 {

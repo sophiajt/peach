@@ -10,7 +10,3 @@ time = "*"
 [lib]
 name = "peachlib"
 path = "src/lib.rs"
-
-#[[bin]]
-#name = "peach"
-#path = "src/bin.rs"

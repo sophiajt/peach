@@ -405,7 +405,6 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 /// Returns the location of the compiled binary.
 pub fn compile_bytecode(bc: &BytecodeEngine, output_fname: &str) -> ::std::io::Result<String> {
     let output = codegen_c_from_bytecode(bc);
-    //println!("{}", output);
 
     let path = {
         use std::fs::File;
@@ -431,7 +430,6 @@ pub fn compile_bytecode(bc: &BytecodeEngine, output_fname: &str) -> ::std::io::R
 #[cfg(windows)]
 fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let start = PreciseTime::now();
-    //println!("path: {:?}", path);
     use std::process::Command;
 
     let output_fname = String::new() + path.with_extension("exe").to_str().unwrap();
@@ -476,7 +474,6 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
 #[cfg(unix)]
 fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
     let start = PreciseTime::now();
-    //println!("path: {:?}", path);
     use std::process::Command;
     let output_fname = String::new() + path.with_extension("").to_str().unwrap();
 
