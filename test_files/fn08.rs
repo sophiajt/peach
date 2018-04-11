@@ -1,5 +1,5 @@
 fn foo(y: u64) {
-    __debug__(y + 2);
+    println!("{}", y + 2);
 }
 
 fn main() {

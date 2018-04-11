@@ -1,6 +1,8 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param, Processed,
                Scope, ScopeId, VarStack};
-use syn::{BinOp, Block, Expr, FnArg, IntSuffix, Lit, Member, Pat, ReturnType, Stmt, Type};
+use proc_macro2::TokenStream;
+use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, Lit, Member, Pat, ReturnType, Stmt,
+          Type};
 use typecheck::{builtin_type, TypeId, TypeInfo};
 
 impl BytecodeEngine {
@@ -97,13 +99,26 @@ impl BytecodeEngine {
         self.scopes.push(Scope::new(parent, false));
         let current_scope_id = self.scopes.len() - 1;
 
+        let mut processed_block: Vec<Stmt> = vec![];
+
         for stmt in &block.stmts {
-            if let Stmt::Item(ref item) = stmt {
+            let stmt = stmt.clone();
+            //TODO: FIXME: proper macro processing should probably be done higher
+            if let Stmt::Item(Item::Macro(im)) = stmt {
+                if im.mac.path.segments[0].ident.as_ref() == "println" {
+                    let token_stream: TokenStream = im.mac.tts.into_iter().skip(2).collect();
+                    let call = String::new() + "__debug__(" + &token_stream.to_string() + ");";
+                    let result: Stmt = syn::parse_str(&call).unwrap();
+                    processed_block.push(result);
+                }
+            } else if let Stmt::Item(ref item) = stmt {
                 self.prepare_item(item.clone(), current_scope_id);
+            } else {
+                processed_block.push(stmt.clone());
             }
         }
 
-        for stmt in &block.stmts {
+        for stmt in &processed_block {
             return_type_id = self.convert_stmt_to_bytecode(
                 stmt,
                 expected_return_type,
@@ -386,7 +401,7 @@ impl BytecodeEngine {
                 );
 
                 if cond_type != builtin_type::BOOL {
-                    unimplemented!("If condition needs to be boolean");
+                    unimplemented!("While condition needs to be boolean");
                 }
 
                 bytecode.push(Bytecode::WhileCond(0));
@@ -682,6 +697,24 @@ impl BytecodeEngine {
                     }
                 } else {
                     unimplemented!("Member access on non-struct types");
+                }
+            }
+            Expr::Macro(em) => {
+                if em.mac.path.segments[0].ident.as_ref() == "println" {
+                    let em = em.clone();
+                    let token_stream: TokenStream = em.mac.tts.into_iter().skip(2).collect();
+                    let call = String::new() + "__debug__(" + &token_stream.to_string() + ")";
+                    let result: Expr = syn::parse_str(&call).unwrap();
+                    let type_id = self.convert_expr_to_bytecode(
+                        &result,
+                        expected_return_type,
+                        bytecode,
+                        current_scope_id,
+                        var_stack,
+                    );
+                    type_id
+                } else {
+                    unimplemented!("Can not resolve macro type");
                 }
             }
             _ => unimplemented!("Unknown expr type: {:#?}", expr),

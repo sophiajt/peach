@@ -6,5 +6,5 @@ struct Bar {
 fn main() {
     let bar = Bar { x: 4, y: 5 };
 
-    __debug__(bar.x);
+    println!("{}", bar.x);
 }

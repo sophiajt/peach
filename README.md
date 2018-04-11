@@ -25,12 +25,13 @@ Some possible next steps:
 * (DONE) 'use' items
 * (DONE) mod "file":
   * (DONE) Noticed that if this is added, you can load files froms of code from the repl
-* All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
+* (DONE) All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
+* (DONE) Add structs and member access
 * TODO: mutability check
 * TODO: consistent naming
 * TODO: mod visibility
 * TODO: Check types of each function argument
-* Add structs and member access
+* TODO: WASM and native x64/x86 support(?)  These feel pretty likely, especially wasm.  The bytecode would need more type annotations, but should be doable.
 * Add type inference (we kinda already have it, but it's not like real yet)
 
 We could also start a non-lazy mode that's parallel

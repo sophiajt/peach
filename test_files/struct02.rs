@@ -5,5 +5,5 @@ struct Bar {
 fn main() {
     let bar = Bar { x: 3 };
 
-    __debug__(bar.x);
+    println!("{}", bar.x);
 }

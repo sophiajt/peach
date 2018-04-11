@@ -13,5 +13,5 @@ mod foo {
 fn main() {
     use foo::bar::*;
 
-    __debug__(bazz() - baz());
+    println!("{}", bazz() - baz());
 }

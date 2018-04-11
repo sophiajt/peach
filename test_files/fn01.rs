@@ -3,5 +3,5 @@ fn bar() -> u64 {
 }
 
 fn main() {
-    __debug__(bar());
+    println!("{}", bar());
 }

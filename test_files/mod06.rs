@@ -1,7 +1,7 @@
 mod foo {
     pub mod bar {
         pub fn baz() {
-            __debug__(3);
+            println!("{}", 3);
         }
     }
 }

@@ -5,6 +5,8 @@ mod tests {
     use bytecode::BytecodeEngine;
     use compile;
     use eval;
+
+    #[allow(unused_imports)]
     use typecheck;
 
     #[allow(dead_code)]

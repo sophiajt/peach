@@ -4,6 +4,6 @@ fn main() {
         x();
     }
     fn x() {
-        __debug__(2);
+        println!("{}", 2);
     }
 }

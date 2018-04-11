@@ -5,5 +5,5 @@ fn main() {
         x = x + 1;
     }
 
-    __debug__(x)
+    println!("{}", x)
 }

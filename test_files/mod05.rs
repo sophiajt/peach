@@ -6,7 +6,7 @@ mod foo {
 
 mod baz {
     pub fn qux() {
-        __debug__(7);
+        println!("{}", 7);
     }
 }
 

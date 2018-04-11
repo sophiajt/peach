@@ -1,12 +1,12 @@
 mod foo {
     mod other {
         pub fn baz() {
-            __debug__(4);
+            println!("{}", 4);
         }
     }
     mod bar {
         pub fn baz() {
-            __debug__(3);
+            println!("{}", 3);
         }
     }
 }

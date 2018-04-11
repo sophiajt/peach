@@ -1,3 +1,3 @@
 fn main() {
-    __debug__(6 - 2);
+    println!("{}", 6 - 2);
 }

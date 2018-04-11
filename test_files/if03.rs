@@ -7,5 +7,5 @@ fn main() {
         x = x + 2;
     }
 
-    __debug__(x)
+    println!("{}", x)
 }

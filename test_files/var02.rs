@@ -3,5 +3,5 @@ fn main() {
 
     x = 3;
 
-    __debug__(x);
+    println!("{}", x);
 }

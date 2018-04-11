@@ -3,5 +3,5 @@ fn bar(x: u64, y: u64) -> u64 {
 }
 
 fn main() {
-    __debug__(bar(5, 3))
+    println!("{}", bar(5, 3))
 }

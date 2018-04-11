@@ -1,5 +1,5 @@
 fn bar() {
-    __debug__(6)
+    println!("{}", 6)
 }
 
 fn main() {

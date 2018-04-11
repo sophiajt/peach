@@ -1,6 +1,6 @@
 mod foo {
     pub fn bar() {
-        __debug__(1);
+        println!("{}", 1);
     }
 }
 

@@ -1,3 +1,3 @@
 fn main() {
-    __debug__(9 / 3);
+    println!("{}", 9 / 3);
 }

@@ -1,3 +1,3 @@
 fn main() {
-    __debug__(4 + 1);
+    println!("{}", 4 + 1);
 }

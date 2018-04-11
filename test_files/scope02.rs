@@ -4,6 +4,6 @@ fn main() {
     }
     let x = 3;
     fn x() {
-        __debug__(2);
+        println!("{}", 2);
     }
 }

@@ -1,6 +1,6 @@
 fn main() {
     fn foo() {
-        __debug__(2);
+        println!("{}", 2);
     }
 
     foo();
