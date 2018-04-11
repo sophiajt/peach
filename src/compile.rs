@@ -361,10 +361,8 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
                 ));
 
                 let mut first = true;
-                let mut fields = st.fields.clone();
-                fields.sort();
 
-                for field in fields {
+                for field in &st.fields {
                     cfile.codegen_raw(&format!(
                         "{}{} {}",
                         if !first { ", " } else { "" },
@@ -383,8 +381,8 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
                     for field in &st.fields {
                         cfile.codegen_raw(&format!(
                             "{}{}",
-                            field.0,
                             if !first { ", " } else { "" },
+                            field.0,
                         ));
                         first = false;
                     }

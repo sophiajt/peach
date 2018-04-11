@@ -402,6 +402,8 @@ impl BytecodeEngine {
                     fields.push((iter.ident.unwrap().to_string(), field_ty));
                 }
 
+                fields.sort();
+
                 let type_id = self.typechecker.new_struct(fields);
                 let s = Struct::new(type_id);
                 self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));

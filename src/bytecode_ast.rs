@@ -536,6 +536,7 @@ impl BytecodeEngine {
                         _ => unimplemented!("Unnamed struct members not yet supported"),
                     }
                 }
+
                 //TODO: FIXME: would be great to not have to clone here
                 fields.sort_by_key(|x| x.0.clone());
 
@@ -677,15 +678,6 @@ impl BytecodeEngine {
                 } else {
                     unimplemented!("Member access on non-struct types");
                 }
-                /*
-                if let Some(definition_id) = self.process_path(&ef.base, current_scope_id) {
-                    if let Definition::Processed(Processed::Struct(ref s)) =
-                        self.definitions[definition_id]
-                    {}
-                } else {
-                    unimplemented!("Can't field access on non-structure");
-                }
-                */
             }
             _ => unimplemented!("Unknown expr type: {:#?}", expr),
         }
