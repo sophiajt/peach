@@ -218,6 +218,57 @@ impl BytecodeEngine {
         }
     }
 
+    fn convert_lhs_expr_to_bytecode(
+        &mut self,
+        expr: &Expr,
+        expected_return_type: TypeId,
+        bytecode: &mut Vec<Bytecode>,
+        current_scope_id: ScopeId,
+        var_stack: &mut VarStack,
+    ) -> TypeId {
+        match expr {
+            Expr::Path(ep) => {
+                let ident = ep.path.segments[0].ident.to_string();
+
+                let var_id = var_stack.find_var(&ident);
+                if var_id.is_none() {
+                    unimplemented!("Could not find variable: {}", ident);
+                }
+                let var_id = var_id.unwrap();
+                let var = &mut var_stack.vars[var_id];
+                bytecode.push(Bytecode::LValueVar(var_id));
+
+                var.type_id
+            }
+            Expr::Field(ef) => {
+                let type_id = self.convert_lhs_expr_to_bytecode(
+                    &*ef.base,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    var_stack,
+                );
+
+                if let TypeInfo::Struct(ref st) = self.typechecker.types[type_id] {
+                    match ef.member {
+                        Member::Named(ident) => {
+                            bytecode.push(Bytecode::LValueDot(ident.to_string()));
+                            for field in &st.fields {
+                                if field.0 == ident.as_ref() {
+                                    return field.1;
+                                }
+                            }
+                            unimplemented!("Field access of {} not found", ident);
+                        }
+                        _ => unimplemented!("Unsupported member access"),
+                    }
+                } else {
+                    unimplemented!("Member access on non-struct types");
+                }
+            }
+            _ => unimplemented!("Unsupport lvalue type"),
+        }
+    }
     pub fn convert_expr_to_bytecode(
         &mut self,
         expr: &Expr,
@@ -299,33 +350,27 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                match &*ea.left {
-                    Expr::Path(ep) => {
-                        let ident = ep.path.segments[0].ident.to_string();
+                let lhs_type = self.convert_lhs_expr_to_bytecode(
+                    &*ea.left,
+                    expected_return_type,
+                    bytecode,
+                    current_scope_id,
+                    var_stack,
+                );
 
-                        let var_id = var_stack.find_var(&ident);
-                        if var_id.is_none() {
-                            unimplemented!("Could not find variable: {}", ident);
+                if self.typechecker.assignment_compatible(lhs_type, rhs_type) {
+                    let tighter_type = self.typechecker.tighter_of_types(lhs_type, rhs_type);
+                    match bytecode.last() {
+                        Some(Bytecode::LValueVar(var_id)) => {
+                            var_stack.vars[*var_id].type_id = tighter_type;
                         }
-                        let var_id = var_id.unwrap();
-                        let var = &mut var_stack.vars[var_id];
-
-                        if self.typechecker
-                            .assignment_compatible(var.type_id, rhs_type)
-                        {
-                            var.type_id = self.typechecker.tighter_of_types(var.type_id, rhs_type);
-                        } else {
-                            unimplemented!(
-                                "Assignment between {:?} and {:?}",
-                                var.type_id,
-                                rhs_type
-                            );
-                        }
-
-                        bytecode.push(Bytecode::Assign(var_id));
+                        _ => {}
                     }
-                    _ => unimplemented!("Unsupported variable path for assignment"),
+                } else {
+                    unimplemented!("Assignment between {:?} and {:?}", lhs_type, rhs_type);
                 }
+
+                bytecode.push(Bytecode::Assign);
 
                 builtin_type::VOID
             }

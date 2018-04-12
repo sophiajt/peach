@@ -139,6 +139,11 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.delay_expr(format!("{}.{}", lhs, field));
             }
+            Bytecode::LValueDot(field) => {
+                let lhs = cfile.expression_stack.pop().unwrap();
+
+                cfile.delay_expr(format!("{}.{}", lhs, field));
+            }
             Bytecode::VarDecl(var_id) => {
                 let var = &fun.vars[*var_id];
                 let rhs = cfile.expression_stack.pop().unwrap();
@@ -158,10 +163,14 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             Bytecode::Var(var_id) => {
                 cfile.delay_expr(format!("v{}", var_id));
             }
-            Bytecode::Assign(var_id) => {
+            Bytecode::LValueVar(var_id) => {
+                cfile.delay_expr(format!("v{}", var_id));
+            }
+            Bytecode::Assign => {
+                let lhs = cfile.expression_stack.pop().unwrap();
                 let rhs = cfile.expression_stack.pop().unwrap();
 
-                cfile.codegen_stmt(&format!("v{} = {};\n", *var_id, rhs));
+                cfile.codegen_stmt(&format!("{} = {};\n", lhs, rhs));
             }
             Bytecode::Call(definition_id) => {
                 if let Definition::Processed(Processed::Fun(ref fun)) =

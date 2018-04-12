@@ -26,7 +26,7 @@ pub enum Bytecode {
     VarDecl(VarId),
     VarDeclUninit(VarId),
     Var(VarId),
-    Assign(VarId),
+    Assign,
     Call(DefinitionId),
     If(Offset, TypeId), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
     Else(Offset, TypeId), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
@@ -35,6 +35,10 @@ pub enum Bytecode {
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
     EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
     DebugPrint(TypeId),
+
+    //lvalue
+    LValueVar(VarId),
+    LValueDot(String),
 }
 
 #[derive(Debug, Clone)]

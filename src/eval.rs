@@ -10,7 +10,8 @@ pub enum Value {
     Bool(bool),
     Error,
     Void,
-    Object(HashMap<String, Value>),
+    Object(HashMap<String, usize>),
+    Reference(usize), // reference into the value stack
 }
 
 impl fmt::Display for Value {
@@ -25,6 +26,7 @@ impl fmt::Display for Value {
                 Value::Error => "error".to_string(),
                 Value::Void => "void".to_string(),
                 Value::Object(dict) => format!("object: {:?}", dict),
+                Value::Reference(pos) => format!("reference: {}", pos),
             }
         )
     }
@@ -97,7 +99,7 @@ pub fn eval_block_bytecode(
             Bytecode::Dot(field) => match value_stack.pop() {
                 Some(Value::Object(obj)) => {
                     if obj.contains_key(field) {
-                        value_stack.push(obj[field].clone())
+                        value_stack.push(value_stack[obj[field]].clone())
                     } else {
                         println!("{:#?}", obj);
                         unimplemented!("Can not find field {} in object", field);
@@ -105,6 +107,21 @@ pub fn eval_block_bytecode(
                 }
                 _ => {
                     unimplemented!("Dot access on value that isn't an object");
+                }
+            },
+            Bytecode::LValueDot(field) => match value_stack.pop() {
+                Some(Value::Reference(slot)) => match value_stack[slot] {
+                    Value::Object(ref obj) => {
+                        if obj.contains_key(field) {
+                            value_stack.push(Value::Reference(obj[field]))
+                        } else {
+
+                        }
+                    }
+                    _ => unimplemented!("Field access of non-object"),
+                },
+                _ => {
+                    unimplemented!("Field access into unknown value");
                 }
             },
             Bytecode::PushU64(val) => {
@@ -156,10 +173,13 @@ pub fn eval_block_bytecode(
                 let pos: usize = var_lookup[var_id];
                 value_stack.push(value_stack[pos].clone());
             }
-            Bytecode::Assign(var_id) => match value_stack.pop() {
-                Some(val) => {
-                    let pos: usize = var_lookup[var_id];
-                    value_stack[pos] = val;
+            Bytecode::LValueVar(var_id) => {
+                let pos: usize = var_lookup[var_id];
+                value_stack.push(Value::Reference(pos));
+            }
+            Bytecode::Assign => match (value_stack.pop(), value_stack.pop()) {
+                (Some(Value::Reference(slot)), Some(rhs)) => {
+                    value_stack[slot] = rhs;
                 }
                 _ => unimplemented!("Assignment missing right-hand side value"),
             },
@@ -174,12 +194,10 @@ pub fn eval_block_bytecode(
                 {
                     if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
                         let mut hash = HashMap::new();
+                        let mut offset = 1;
                         for field in st.fields.iter().rev() {
-                            if let Some(val) = value_stack.pop() {
-                                hash.insert(field.0.clone(), val);
-                            } else {
-                                unimplemented!("Could not match struct fields with expected");
-                            }
+                            hash.insert(field.0.clone(), value_stack.len() - offset);
+                            offset += 1;
                         }
                         value_stack.push(Value::Object(hash))
                     } else {

@@ -27,6 +27,7 @@ Some possible next steps:
   * (DONE) Noticed that if this is added, you can load files froms of code from the repl
 * (DONE) All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
 * (DONE) Add structs and member access
+* (DONE) Basic println support
 * TODO: mutability check
 * TODO: consistent naming
 * TODO: mod visibility
