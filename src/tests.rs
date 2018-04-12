@@ -360,4 +360,19 @@ mod tests {
     fn test_while01() {
         run_test("while01.rs", "DEBUG: U64(10)", "DEBUG: 10");
     }
+
+    #[test]
+    fn test_pain01() {
+        run_test("pain01.rs", "DEBUG: U64(1)", "DEBUG: 1");
+    }
+
+    #[test]
+    fn test_pain02() {
+        run_test("pain02.rs", "DEBUG: U64(10000)", "DEBUG: 10000");
+    }
+
+    #[test]
+    fn test_pain03() {
+        run_test("pain03.rs", "DEBUG: U64(10000)", "DEBUG: 10000");
+    }
 }
