@@ -2,7 +2,7 @@ use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Pa
                Scope, ScopeId, VarStack};
 use proc_macro2::TokenStream;
 use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, Lit, Member, Pat, ReturnType, Stmt,
-          Type};
+          Type, UnOp};
 use typecheck::{builtin_type, TypeId, TypeInfo};
 
 impl BytecodeEngine {
@@ -185,11 +185,12 @@ impl BytecodeEngine {
 
                                 if !self.typechecker.assignment_compatible(var_ty, rhs_ty) {
                                     unimplemented!(
-                                        "Explicit variable type '{:?}' does not match expression type '{:?}'", var_ty, rhs_ty
+                                        "Explicit variable type '{}' does not match expression type '{}'", self.typechecker.printable_name(var_ty), self.typechecker.printable_name(rhs_ty)
                                     )
                                 }
 
                                 let var_id = var_stack.add_var(ident, var_ty);
+                                bytecode.push(Bytecode::As(var_ty));
                                 bytecode.push(Bytecode::VarDecl(var_id));
 
                                 builtin_type::VOID
@@ -316,8 +317,16 @@ impl BytecodeEngine {
                         bytecode.push(Bytecode::PushU32(li.value() as u32));
                         builtin_type::U32
                     }
+                    IntSuffix::I64 => {
+                        bytecode.push(Bytecode::PushI64(li.value() as i64));
+                        builtin_type::I64
+                    }
+                    IntSuffix::I32 => {
+                        bytecode.push(Bytecode::PushI32(li.value() as i32));
+                        builtin_type::I32
+                    }
                     _ => {
-                        bytecode.push(Bytecode::PushU64(li.value()));
+                        bytecode.push(Bytecode::PushUnknownInt(li.value() as i32));
                         builtin_type::UNKNOWN_INT
                     }
                 },
@@ -469,6 +478,40 @@ impl BytecodeEngine {
 
                 while_ty
             }
+            Expr::Unary(eu) => match eu.op {
+                UnOp::Neg(_a) => {
+                    let expr_type = self.convert_expr_to_bytecode(
+                        &*eu.expr,
+                        expected_return_type,
+                        bytecode,
+                        current_scope_id,
+                        var_stack,
+                    );
+
+                    match expr_type {
+                        builtin_type::U32 => {
+                            unimplemented!("Can't negate value of type u32");
+                        }
+                        builtin_type::U64 => {
+                            unimplemented!("Can't negate value of type u64");
+                        }
+                        builtin_type::UNKNOWN_INT => {
+                            bytecode.push(Bytecode::Neg);
+                            builtin_type::UNKNOWN_INT
+                        }
+                        builtin_type::I32 => {
+                            bytecode.push(Bytecode::Neg);
+                            builtin_type::I32
+                        }
+                        builtin_type::I64 => {
+                            bytecode.push(Bytecode::Neg);
+                            builtin_type::I64
+                        }
+                        _ => unimplemented!("Negate of non-numeric type"),
+                    }
+                }
+                _ => unimplemented!("Unsupport unary operator"),
+            },
             Expr::Binary(eb) => match eb.op {
                 BinOp::Add(_a) => {
                     let lhs_type = self.convert_expr_to_bytecode(
@@ -771,6 +814,8 @@ impl BytecodeEngine {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
                 "u64" => builtin_type::U64,
                 "u32" => builtin_type::U32,
+                "i64" => builtin_type::I64,
+                "i32" => builtin_type::I32,
                 "bool" => builtin_type::BOOL,
                 _ => {
                     if let Some(definition_id) = self.process_path(&tp.path, current_scope_id) {

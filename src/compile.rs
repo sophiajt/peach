@@ -37,6 +37,8 @@ fn codegen_type(type_id: TypeId) -> String {
     let codegen_ty = match type_id {
         builtin_type::U64 => "unsigned long long".into(),
         builtin_type::U32 => "unsigned".into(),
+        builtin_type::I64 => "signed long long".into(),
+        builtin_type::I32 => "signed".into(),
         builtin_type::UNKNOWN_INT => "int".into(),
         builtin_type::VOID => "void".into(),
         builtin_type::BOOL => "bool".into(),
@@ -93,14 +95,32 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 cfile.codegen_stmt(&format!("return {};\n", retval));
                 break;
             }
+            Bytecode::As(type_id) => {
+                let val = cfile.expression_stack.pop().unwrap();
+                cfile.delay_expr(format!("(({})({}))", codegen_type(*type_id), val));
+            }
             Bytecode::PushU64(val) => {
                 cfile.delay_expr(val.to_string());
             }
             Bytecode::PushU32(val) => {
                 cfile.delay_expr(val.to_string());
             }
+            Bytecode::PushI64(val) => {
+                cfile.delay_expr(val.to_string());
+            }
+            Bytecode::PushI32(val) => {
+                cfile.delay_expr(val.to_string());
+            }
+            Bytecode::PushUnknownInt(val) => {
+                cfile.delay_expr(val.to_string());
+            }
             Bytecode::PushBool(val) => {
                 cfile.delay_expr(val.to_string());
+            }
+            Bytecode::Neg => {
+                let val = cfile.expression_stack.pop().unwrap();
+
+                cfile.delay_expr(format!("(-{})", val));
             }
             Bytecode::Add => {
                 let rhs = cfile.expression_stack.pop().unwrap();
@@ -145,8 +165,9 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 cfile.delay_expr(format!("{}.{}", lhs, field));
             }
             Bytecode::VarDecl(var_id) => {
-                let var = &fun.vars[*var_id];
                 let rhs = cfile.expression_stack.pop().unwrap();
+
+                let var = &fun.vars[*var_id];
 
                 cfile.codegen_stmt(&format!(
                     "{} v{} = {};\n",
@@ -157,7 +178,6 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             }
             Bytecode::VarDeclUninit(var_id) => {
                 let var = &fun.vars[*var_id];
-
                 cfile.codegen_stmt(&format!("{} v{};\n", codegen_type(var.type_id), *var_id));
             }
             Bytecode::Var(var_id) => {
@@ -230,6 +250,8 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                     builtin_type::U64
                     | builtin_type::BOOL
                     | builtin_type::U32
+                    | builtin_type::I64
+                    | builtin_type::I32
                     | builtin_type::UNKNOWN_INT => {
                         cfile.codegen_stmt(&format!(
                             "{} t{};\n",
@@ -283,8 +305,10 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                     builtin_type::BOOL
                     | builtin_type::U32
                     | builtin_type::U64
+                    | builtin_type::I32
+                    | builtin_type::I64
                     | builtin_type::UNKNOWN_INT => {
-                        format!("printf(\"DEBUG: %u\\n\", ({}));\n", val)
+                        format!("printf(\"DEBUG: %d\\n\", ({}));\n", val)
                     }
                     _ => format!("printf(\"DEBUG: <custom type:%u>\\n\", ({}));\n", type_id),
                 };

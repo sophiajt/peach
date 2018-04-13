@@ -28,6 +28,8 @@ Some possible next steps:
 * (DONE) All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
 * (DONE) Add structs and member access
 * (DONE) Basic println support
+* (DONE) Negate.
+* (DONE) Add simple number-converting "as" to handle broken expr tests
 * TODO: mutability check
 * TODO: consistent naming
 * TODO: mod visibility

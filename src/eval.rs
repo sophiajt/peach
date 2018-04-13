@@ -1,12 +1,15 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
 use std::collections::HashMap;
 use std::fmt;
-use typecheck::TypeInfo;
+use typecheck::{builtin_type, TypeInfo};
 
 #[derive(Debug, Clone)]
 pub enum Value {
     U64(u64),
     U32(u32),
+    I64(i64),
+    I32(i32),
+    UnknownInt(i32),
     Bool(bool),
     Error,
     Void,
@@ -22,6 +25,9 @@ impl fmt::Display for Value {
             match self {
                 Value::U64(x) => x.to_string(),
                 Value::U32(x) => x.to_string(),
+                Value::I64(x) => x.to_string(),
+                Value::I32(x) => x.to_string(),
+                Value::UnknownInt(x) => x.to_string(),
                 Value::Bool(b) => b.to_string(),
                 Value::Error => "error".to_string(),
                 Value::Void => "void".to_string(),
@@ -51,12 +57,54 @@ pub fn eval_block_bytecode(
                 Some(s) => return s,
                 _ => return Value::Error,
             },
+            Bytecode::As(type_id) => match value_stack.pop() {
+                Some(Value::UnknownInt(val)) => match *type_id {
+                    builtin_type::I32 => {
+                        value_stack.push(Value::I32(val as i32));
+                    }
+                    builtin_type::I64 => {
+                        value_stack.push(Value::I64(val as i64));
+                    }
+                    builtin_type::U32 => {
+                        value_stack.push(Value::U32(val as u32));
+                    }
+                    builtin_type::U64 => {
+                        value_stack.push(Value::U64(val as u64));
+                    }
+                    _ => {
+                        unimplemented!("Trying to convert {{unknown int}} to non-integer type");
+                    }
+                },
+                Some(x) => value_stack.push(x),
+                None => unimplemented!("Can not do a type conversion of missing value"),
+            },
+            Bytecode::Neg => match value_stack.pop() {
+                Some(Value::I64(val)) => {
+                    value_stack.push(Value::I64(-val));
+                }
+                Some(Value::I32(val)) => {
+                    value_stack.push(Value::I32(-val));
+                }
+                Some(Value::UnknownInt(val)) => {
+                    value_stack.push(Value::UnknownInt(-val));
+                }
+                x => unimplemented!("Can't negate values of {:?}", x),
+            },
             Bytecode::Add => match (value_stack.pop(), value_stack.pop()) {
                 (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
                     value_stack.push(Value::U64(lhs + rhs));
                 }
                 (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
                     value_stack.push(Value::U32(lhs + rhs));
+                }
+                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                    value_stack.push(Value::I64(lhs + rhs));
+                }
+                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                    value_stack.push(Value::I32(lhs + rhs));
+                }
+                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                    value_stack.push(Value::UnknownInt(lhs + rhs));
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
@@ -67,6 +115,15 @@ pub fn eval_block_bytecode(
                 (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
                     value_stack.push(Value::U32(lhs - rhs));
                 }
+                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                    value_stack.push(Value::I64(lhs - rhs));
+                }
+                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                    value_stack.push(Value::I32(lhs - rhs));
+                }
+                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                    value_stack.push(Value::UnknownInt(lhs - rhs));
+                }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::Mul => match (value_stack.pop(), value_stack.pop()) {
@@ -75,6 +132,15 @@ pub fn eval_block_bytecode(
                 }
                 (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
                     value_stack.push(Value::U32(lhs * rhs));
+                }
+                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                    value_stack.push(Value::I64(lhs * rhs));
+                }
+                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                    value_stack.push(Value::I32(lhs * rhs));
+                }
+                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                    value_stack.push(Value::UnknownInt(lhs * rhs));
                 }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
@@ -85,6 +151,15 @@ pub fn eval_block_bytecode(
                 (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
                     value_stack.push(Value::U32(lhs / rhs));
                 }
+                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                    value_stack.push(Value::I64(lhs / rhs));
+                }
+                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                    value_stack.push(Value::I32(lhs / rhs));
+                }
+                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                    value_stack.push(Value::UnknownInt(lhs / rhs));
+                }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::Lt => match (value_stack.pop(), value_stack.pop()) {
@@ -94,6 +169,15 @@ pub fn eval_block_bytecode(
                 (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
                     value_stack.push(Value::Bool(lhs < rhs));
                 }
+                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                    value_stack.push(Value::Bool(lhs < rhs));
+                }
+                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                    value_stack.push(Value::Bool(lhs < rhs));
+                }
+                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                    value_stack.push(Value::Bool(lhs < rhs));
+                }
                 (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
             },
             Bytecode::Dot(field) => match value_stack.pop() {
@@ -101,8 +185,7 @@ pub fn eval_block_bytecode(
                     if obj.contains_key(field) {
                         value_stack.push(value_stack[obj[field]].clone())
                     } else {
-                        println!("{:#?}", obj);
-                        unimplemented!("Can not find field {} in object", field);
+                        unimplemented!("Can not find field {} in object {:#?}", field, obj);
                     }
                 }
                 _ => {
@@ -129,6 +212,15 @@ pub fn eval_block_bytecode(
             }
             Bytecode::PushU32(val) => {
                 value_stack.push(Value::U32(*val));
+            }
+            Bytecode::PushI64(val) => {
+                value_stack.push(Value::I64(*val));
+            }
+            Bytecode::PushI32(val) => {
+                value_stack.push(Value::I32(*val));
+            }
+            Bytecode::PushUnknownInt(val) => {
+                value_stack.push(Value::UnknownInt(*val));
             }
             Bytecode::PushBool(val) => {
                 value_stack.push(Value::Bool(*val));

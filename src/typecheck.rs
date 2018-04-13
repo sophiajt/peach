@@ -7,8 +7,10 @@ pub mod builtin_type {
     pub const VOID: TypeId = 2;
     pub const U64: TypeId = 3;
     pub const U32: TypeId = 4;
-    pub const BOOL: TypeId = 5;
-    pub const ERROR: TypeId = 6;
+    pub const I64: TypeId = 5;
+    pub const I32: TypeId = 6;
+    pub const BOOL: TypeId = 7;
+    pub const ERROR: TypeId = 8;
 }
 
 pub(crate) struct StructType {
@@ -52,6 +54,8 @@ impl TypeChecker {
             builtin_type::VOID => "void".into(),
             builtin_type::U64 => "u64".into(),
             builtin_type::U32 => "u32".into(),
+            builtin_type::I64 => "i64".into(),
+            builtin_type::I32 => "i32".into(),
             builtin_type::BOOL => "bool".into(),
             builtin_type::ERROR => "{error}".into(),
             _ => format!("{{custom type: {} }}", type_id),
@@ -65,8 +69,12 @@ impl TypeChecker {
         match (lhs, rhs) {
             | (builtin_type::U64, builtin_type::UNKNOWN_INT)
             | (builtin_type::U32, builtin_type::UNKNOWN_INT)
+            | (builtin_type::I64, builtin_type::UNKNOWN_INT)
+            | (builtin_type::I32, builtin_type::UNKNOWN_INT)
             | (builtin_type::UNKNOWN_INT, builtin_type::U64)
             | (builtin_type::UNKNOWN_INT, builtin_type::U32)
+            | (builtin_type::UNKNOWN_INT, builtin_type::I64)
+            | (builtin_type::UNKNOWN_INT, builtin_type::I32)
             | (builtin_type::UNKNOWN_INT, builtin_type::UNKNOWN_INT) => true,
             _ => false,
         }
@@ -78,10 +86,14 @@ impl TypeChecker {
         }
         match (lhs, rhs) {
             (builtin_type::U64, builtin_type::UNKNOWN_INT)
-            | (builtin_type::UNKNOWN, _)
             | (builtin_type::U32, builtin_type::UNKNOWN_INT)
+            | (builtin_type::I64, builtin_type::UNKNOWN_INT)
+            | (builtin_type::I32, builtin_type::UNKNOWN_INT)
+            | (builtin_type::UNKNOWN, _)
             | (builtin_type::UNKNOWN_INT, builtin_type::U64)
-            | (builtin_type::UNKNOWN_INT, builtin_type::U32) => true,
+            | (builtin_type::UNKNOWN_INT, builtin_type::U32)
+            | (builtin_type::UNKNOWN_INT, builtin_type::I64)
+            | (builtin_type::UNKNOWN_INT, builtin_type::I32) => true,
             _ => false,
         }
     }
@@ -90,9 +102,13 @@ impl TypeChecker {
         match (lhs, rhs) {
             (builtin_type::U64, _) => builtin_type::U64,
             (builtin_type::U32, _) => builtin_type::U32,
+            (builtin_type::I64, _) => builtin_type::I64,
+            (builtin_type::I32, _) => builtin_type::I32,
             (builtin_type::BOOL, _) => builtin_type::BOOL,
             (_, builtin_type::U64) => builtin_type::U64,
             (_, builtin_type::U32) => builtin_type::U32,
+            (_, builtin_type::I64) => builtin_type::I64,
+            (_, builtin_type::I32) => builtin_type::I32,
             (_, builtin_type::BOOL) => builtin_type::BOOL,
             (builtin_type::UNKNOWN, rhs) => rhs.clone(),
             (lhs, builtin_type::UNKNOWN) => lhs.clone(),
