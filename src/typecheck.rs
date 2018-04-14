@@ -58,7 +58,7 @@ impl TypeChecker {
             builtin_type::I32 => "i32".into(),
             builtin_type::BOOL => "bool".into(),
             builtin_type::ERROR => "{error}".into(),
-            _ => format!("{{custom type: {} }}", type_id),
+            _ => format!("{{custom type: {}}}", type_id),
         }
     }
 

@@ -303,8 +303,8 @@ impl BytecodeEngine {
                 } else {
                     unimplemented!(
                         "Mismatched return types: {} and {}",
-                        actual_return_type,
-                        expected_return_type
+                        self.typechecker.printable_name(actual_return_type),
+                        self.typechecker.printable_name(expected_return_type)
                     );
                 }
             }
