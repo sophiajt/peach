@@ -79,6 +79,7 @@ impl BytecodeEngine {
                     return_type_id,
                     vars: var_stack.vars,
                     bytecode,
+                    extern_name: None,
                 }
             }
             _ => unimplemented!("Could not find function"),
@@ -805,6 +806,13 @@ impl BytecodeEngine {
                     unimplemented!("Can not resolve macro type");
                 }
             }
+            Expr::Unsafe(eu) => self.convert_block_to_bytecode(
+                &eu.block,
+                expected_return_type,
+                bytecode,
+                Some(current_scope_id),
+                var_stack,
+            ),
             _ => unimplemented!("Unknown expr type: {:#?}", expr),
         }
     }

@@ -45,7 +45,7 @@ We could also start a non-lazy mode that's parallel
 
 Where and how do macros fit in?
 
-
+What are you, peach?  What do you want to be?
 
 
 Non-next steps:

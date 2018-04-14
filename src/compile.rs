@@ -198,7 +198,14 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                 {
                     let mut expr_string = String::new();
 
-                    expr_string += &format!("fun_{}(", definition_id);
+                    match fun.extern_name {
+                        Some(ref ex_name) => {
+                            expr_string += &format!("{}(", ex_name);
+                        }
+                        None => {
+                            expr_string += &format!("fun_{}(", definition_id);
+                        }
+                    }
                     let expression_stack_len = cfile.expression_stack.len();
                     let mut offset = fun.params.len();
                     while offset > 0 {
@@ -348,12 +355,44 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     for definition_id in 0..bc.definitions.len() {
         if let Definition::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
             if definition_id != starting_fn_id {
+                /*
                 let header = format!(
                     "{} fun_{}();\n",
                     codegen_type(fun.return_type_id),
                     definition_id
                 );
                 cfile.codegen_raw(&header);
+                */
+                match fun.extern_name {
+                    Some(ref ex_name) => {
+                        cfile.codegen_raw(&format!(
+                            "{} {}(",
+                            &codegen_type(fun.return_type_id),
+                            ex_name
+                        ));
+                    }
+                    None => {
+                        let header = format!(
+                            "{} fun_{}(\n",
+                            codegen_type(fun.return_type_id),
+                            definition_id
+                        );
+                        cfile.codegen_raw(&header);
+                    }
+                }
+
+                let mut first = true;
+                for param in &fun.params {
+                    cfile.codegen_raw(&format!(
+                        "{}{} {}",
+                        if !first { ", " } else { "" },
+                        codegen_type(param.type_id),
+                        param.name
+                    ));
+                    first = false;
+                }
+
+                cfile.codegen_raw(");\n");
             }
         } else if let Definition::Processed(Processed::Struct(ref s)) =
             bc.definitions[definition_id]
@@ -368,10 +407,12 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     for definition_id in 0..bc.definitions.len() {
         if let Definition::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
-            if definition_id == starting_fn_id {
-                codegen_fn(&mut cfile, bc, "main", fun);
-            } else {
-                codegen_fn(&mut cfile, bc, &format!("fun_{}", definition_id), fun);
+            if fun.extern_name.is_none() {
+                if definition_id == starting_fn_id {
+                    codegen_fn(&mut cfile, bc, "main", fun);
+                } else {
+                    codegen_fn(&mut cfile, bc, &format!("fun_{}", definition_id), fun);
+                }
             }
         } else if let Definition::Processed(Processed::Struct(ref s)) =
             bc.definitions[definition_id]

@@ -367,6 +367,11 @@ mod tests {
     }
 
     #[test]
+    fn test_ffi01() {
+        run_test("ffi01.rs", "DEBUG: I32(1)", "DEBUG: 1");
+    }
+
+    #[test]
     fn test_pain01() {
         run_test("pain01.rs", "DEBUG: UnknownInt(1)", "DEBUG: 1");
     }

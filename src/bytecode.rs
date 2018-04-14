@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use syn::{self, Item, ItemFn, ItemMod, ItemStruct};
+use syn::{self, FnArg, ForeignItem, Item, ItemFn, ItemMod, ItemStruct, Pat, ReturnType};
 
 use typecheck::{builtin_type, TypeChecker, TypeId};
 
@@ -113,6 +113,7 @@ pub struct Fun {
     pub return_type_id: TypeId,
     pub vars: Vec<VarDecl>,
     pub bytecode: Vec<Bytecode>,
+    pub extern_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -304,6 +305,60 @@ impl BytecodeEngine {
                     .definitions
                     .insert(fn_name, self.definitions.len() - 1);
             }
+            Item::ForeignMod(item_fm) => for f in item_fm.items {
+                match f {
+                    ForeignItem::Fn(fun) => {
+                        let fn_name = fun.ident.to_string();
+
+                        let return_type_id = match &fun.decl.output {
+                            ReturnType::Default => builtin_type::VOID,
+                            ReturnType::Type(_, ref box_ty) => {
+                                self.resolve_type(box_ty, current_scope_id)
+                            }
+                        };
+
+                        let mut var_stack = VarStack::new();
+                        let mut params = vec![];
+
+                        // process function params
+                        for input in &fun.decl.inputs {
+                            match input {
+                                FnArg::Captured(ref capture) => {
+                                    match capture.pat {
+                                        Pat::Ident(ref pi) => {
+                                            let ident = pi.ident.to_string();
+                                            let type_id =
+                                                self.resolve_type(&capture.ty, current_scope_id);
+                                            let var_id = var_stack.add_var(ident.clone(), type_id);
+                                            params.push(Param::new(ident, var_id, type_id));
+                                        }
+                                        _ => unimplemented!(
+                                            "Unsupported pattern type in function parameter"
+                                        ),
+                                    };
+                                }
+                                _ => unimplemented!(
+                                    "Function argument of {:?} is not supported",
+                                    input
+                                ),
+                            }
+                        }
+
+                        self.definitions
+                            .push(Definition::Processed(Processed::Fun(Fun {
+                                bytecode: vec![],
+                                params,
+                                return_type_id,
+                                vars: vec![],
+                                extern_name: Some(fn_name.clone()),
+                            })));
+                        self.scopes[current_scope_id]
+                            .definitions
+                            .insert(fn_name, self.definitions.len() - 1);
+                    }
+                    _ => unimplemented!("Unsupported foreign item"),
+                }
+            },
             Item::Mod(item_mod) => {
                 if item_mod.content.is_none() {
                     //Load the file as a module

@@ -3,6 +3,10 @@ use std::collections::HashMap;
 use std::fmt;
 use typecheck::{builtin_type, TypeInfo};
 
+extern "C" {
+    fn abs(input: i32) -> i32;
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     U64(u64),
@@ -43,6 +47,7 @@ pub fn eval_block_bytecode(
     bytecode: &Vec<Bytecode>,
     var_lookup: &mut HashMap<usize, usize>,
     value_stack: &mut Vec<Value>,
+    externals: &mut HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
     debug_capture: &mut Option<String>,
 ) -> Value {
     let bytecode_len = bytecode.len();
@@ -279,8 +284,17 @@ pub fn eval_block_bytecode(
                 if let Definition::Processed(Processed::Fun(ref target_fun)) =
                     bc.definitions[*definition_id]
                 {
-                    let result = eval_fn_bytecode(bc, target_fun, value_stack, debug_capture);
-                    value_stack.push(result);
+                    if let Some(ref ex_name) = target_fun.extern_name {
+                        if !externals.contains_key(ex_name) {
+                            prepare_external(ex_name, externals);
+                        }
+                        let result = externals[ex_name](value_stack);
+                        value_stack.push(result);
+                    } else {
+                        let result =
+                            eval_fn_bytecode(bc, target_fun, value_stack, externals, debug_capture);
+                        value_stack.push(result);
+                    }
                 } else if let Definition::Processed(Processed::Struct(ref s)) =
                     bc.definitions[*definition_id]
                 {
@@ -322,6 +336,7 @@ fn eval_fn_bytecode(
     bc: &BytecodeEngine,
     fun: &Fun,
     value_stack: &mut Vec<Value>,
+    externals: &mut HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
     debug_capture: &mut Option<String>,
 ) -> Value {
     let mut var_lookup: HashMap<usize, usize> = HashMap::new();
@@ -337,8 +352,27 @@ fn eval_fn_bytecode(
         &fun.bytecode,
         &mut var_lookup,
         value_stack,
+        externals,
         debug_capture,
     )
+}
+
+fn prepare_external(
+    ex_name: &str,
+    externals: &mut HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
+) {
+    // Go through the extern function and make sure we wrap it.
+    if ex_name == "abs" {
+        externals.insert(
+            ex_name.to_string(),
+            Box::new(|value_stack: &mut Vec<Value>| -> Value {
+                match value_stack.pop() {
+                    Some(Value::I32(val)) => unsafe { Value::I32(abs(val)) },
+                    _ => unimplemented!("Can't call abs on non-i32"),
+                }
+            }),
+        );
+    }
 }
 
 /// Begin evaluating the bytecode starting at the given function name.  Optionally, capture the debug output for later use.
@@ -349,8 +383,11 @@ pub fn eval_engine(
 ) -> Value {
     // begin evaluating with the first function
     // We assume scope 0 is the file root scope of the starting file, where will find the main
+
+    let mut externals: HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>> = HashMap::new();
+
     let fun = bc.get_fn(starting_fn_name, 0);
     let mut value_stack: Vec<Value> = vec![];
 
-    eval_fn_bytecode(bc, &fun, &mut value_stack, debug_capture)
+    eval_fn_bytecode(bc, &fun, &mut value_stack, &mut externals, debug_capture)
 }
