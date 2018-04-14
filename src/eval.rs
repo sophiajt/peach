@@ -1,7 +1,7 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
 use std::collections::HashMap;
 use std::fmt;
-use typecheck::{builtin_type, TypeInfo};
+use typecheck::{builtin_type, TypeId, TypeInfo};
 
 extern "C" {
     fn abs(input: i32) -> i32;
@@ -19,6 +19,23 @@ pub enum Value {
     Void,
     Object(HashMap<String, usize>),
     Reference(usize), // reference into the value stack
+}
+
+impl Value {
+    fn to(self, type_id: TypeId) -> Value {
+        match self {
+            Value::UnknownInt(val) => match type_id {
+                builtin_type::I32 => Value::I32(val as i32),
+                builtin_type::I64 => Value::I64(val as i64),
+                builtin_type::U32 => Value::U32(val as u32),
+                builtin_type::U64 => Value::U64(val as u64),
+                _ => {
+                    unimplemented!("Trying to convert {{unknown int}} to non-integer type");
+                }
+            },
+            x => x,
+        }
+    }
 }
 
 impl fmt::Display for Value {
@@ -63,25 +80,10 @@ pub fn eval_block_bytecode(
                 _ => return Value::Error,
             },
             Bytecode::As(type_id) => match value_stack.pop() {
-                Some(Value::UnknownInt(val)) => match *type_id {
-                    builtin_type::I32 => {
-                        value_stack.push(Value::I32(val as i32));
-                    }
-                    builtin_type::I64 => {
-                        value_stack.push(Value::I64(val as i64));
-                    }
-                    builtin_type::U32 => {
-                        value_stack.push(Value::U32(val as u32));
-                    }
-                    builtin_type::U64 => {
-                        value_stack.push(Value::U64(val as u64));
-                    }
-                    _ => {
-                        unimplemented!("Trying to convert {{unknown int}} to non-integer type");
-                    }
-                },
-                Some(x) => value_stack.push(x),
-                None => unimplemented!("Can not do a type conversion of missing value"),
+                Some(x) => {
+                    value_stack.push(x.to(*type_id));
+                }
+                None => unimplemented!("Can't cast non-value"),
             },
             Bytecode::Neg => match value_stack.pop() {
                 Some(Value::I64(val)) => {
@@ -367,7 +369,14 @@ fn prepare_external(
             ex_name.to_string(),
             Box::new(|value_stack: &mut Vec<Value>| -> Value {
                 match value_stack.pop() {
-                    Some(Value::I32(val)) => unsafe { Value::I32(abs(val)) },
+                    Some(val) => {
+                        let val = val.to(builtin_type::I32);
+                        if let Value::I32(i) = val {
+                            unsafe { Value::I32(abs(i)) }
+                        } else {
+                            unimplemented!("Value can't be converted to i32")
+                        }
+                    }
                     _ => unimplemented!("Can't call abs on non-i32"),
                 }
             }),
