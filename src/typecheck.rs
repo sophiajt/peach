@@ -10,7 +10,8 @@ pub mod builtin_type {
     pub const I64: TypeId = 5;
     pub const I32: TypeId = 6;
     pub const BOOL: TypeId = 7;
-    pub const ERROR: TypeId = 8;
+    pub const VOID_PTR: TypeId = 8;
+    pub const ERROR: TypeId = 9;
 }
 
 pub(crate) struct StructType {

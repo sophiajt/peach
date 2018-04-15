@@ -40,6 +40,7 @@ fn codegen_type(type_id: TypeId) -> String {
         builtin_type::I64 => "signed long long".into(),
         builtin_type::I32 => "signed".into(),
         builtin_type::UNKNOWN_INT => "int".into(),
+        builtin_type::VOID_PTR => "void*".into(),
         builtin_type::VOID => "void".into(),
         builtin_type::BOOL => "bool".into(),
         type_id => {
@@ -113,6 +114,9 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             }
             Bytecode::PushUnknownInt(val) => {
                 cfile.delay_expr(val.to_string());
+            }
+            Bytecode::PushRawNullPtr => {
+                cfile.delay_expr("NULL".to_string());
             }
             Bytecode::PushBool(val) => {
                 cfile.delay_expr(val.to_string());
@@ -513,6 +517,8 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
         .arg("/w")
         .arg(&format!("/Fe{}", output_fname))
         .arg(&format!("/Fo{}", output_objname))
+        .arg(&format!("SDL2.lib"))  //TODO: FIXME: Make these options
+        .arg(&format!("SDL2main.lib")) // TODO: FIXME: ditto
         .arg(path)
         .output()?;
     let end = PreciseTime::now();

@@ -35,7 +35,7 @@ mod tests {
         // Eval stage
         let mut ee = EvalEngine::new();
         ee.debug_capture = Some(String::new());
-        ee.register_extern_fn("abs", abs);
+        ee.register_extern_fn_1_1("abs", abs);
         ee.eval_program(&bc, "main");
         assert_eq!(eval_expect, ee.debug_capture.unwrap().trim());
 

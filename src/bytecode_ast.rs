@@ -685,18 +685,24 @@ impl BytecodeEngine {
                     let ident = ep.path.segments[0].ident.to_string();
                     let var_id = var_stack.find_var(&ident);
                     if var_id.is_none() {
-                        unimplemented!("Could not find {}", ident);
+                        if ident == "NULL" {
+                            bytecode.push(Bytecode::PushRawNullPtr);
+                            builtin_type::VOID_PTR
+                        } else {
+                            unimplemented!("Could not find {}", ident);
+                        }
+                    } else {
+                        let var_id = var_id.unwrap();
+                        let var = &var_stack.vars[var_id];
+
+                        if var.type_id == builtin_type::UNKNOWN {
+                            unimplemented!("{} used before being given a value", ident);
+                        }
+
+                        bytecode.push(Bytecode::Var(var_id));
+
+                        var.type_id
                     }
-                    let var_id = var_id.unwrap();
-                    let var = &var_stack.vars[var_id];
-
-                    if var.type_id == builtin_type::UNKNOWN {
-                        unimplemented!("{} used before being given a value", ident);
-                    }
-
-                    bytecode.push(Bytecode::Var(var_id));
-
-                    var.type_id
                 }
             }
             Expr::Call(ec) => match *ec.func {
@@ -839,7 +845,11 @@ impl BytecodeEngine {
                     }
                 }
             },
-            _ => unimplemented!("Could not resolve type"),
+            Type::Ptr(_) => {
+                //TODO: FIXME: Currently we only support void pointers, so we assume that's what it is
+                builtin_type::VOID_PTR
+            }
+            _ => unimplemented!("Unsupported type"),
         }
     }
 }

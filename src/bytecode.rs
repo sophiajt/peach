@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use syn::{self, FnArg, ForeignItem, Item, ItemFn, ItemMod, ItemStruct, Pat, ReturnType};
-
 use typecheck::{builtin_type, TypeChecker, TypeId};
 
 pub(crate) type ScopeId = usize;
@@ -20,6 +19,7 @@ pub enum Bytecode {
     PushI32(i32),
     PushUnknownInt(i32),
     PushBool(bool),
+    PushRawNullPtr,
     As(TypeId),
     Add,
     Sub,
