@@ -1,11 +1,8 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
-use typecheck::{builtin_type, TypeId, TypeInfo};
-
-extern "C" {
-    fn abs(input: i32) -> i32;
-}
+use typecheck::{builtin_type, TypeInfo};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -19,23 +16,6 @@ pub enum Value {
     Void,
     Object(HashMap<String, usize>),
     Reference(usize), // reference into the value stack
-}
-
-impl Value {
-    fn to(self, type_id: TypeId) -> Value {
-        match self {
-            Value::UnknownInt(val) => match type_id {
-                builtin_type::I32 => Value::I32(val as i32),
-                builtin_type::I64 => Value::I64(val as i64),
-                builtin_type::U32 => Value::U32(val as u32),
-                builtin_type::U64 => Value::U64(val as u64),
-                _ => {
-                    unimplemented!("Trying to convert {{unknown int}} to non-integer type");
-                }
-            },
-            x => x,
-        }
-    }
 }
 
 impl fmt::Display for Value {
@@ -59,344 +39,375 @@ impl fmt::Display for Value {
     }
 }
 
-pub fn eval_block_bytecode(
-    bc: &BytecodeEngine,
-    bytecode: &Vec<Bytecode>,
-    var_lookup: &mut HashMap<usize, usize>,
-    value_stack: &mut Vec<Value>,
-    externals: &mut HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
-    debug_capture: &mut Option<String>,
-) -> Value {
-    let bytecode_len = bytecode.len();
-    let mut idx = 0;
-    while idx < bytecode_len {
-        let code = &bytecode[idx];
-        match code {
-            Bytecode::ReturnVoid => {
-                return Value::Void;
-            }
-            Bytecode::ReturnLastStackValue => match value_stack.pop() {
-                Some(s) => return s,
-                _ => return Value::Error,
-            },
-            Bytecode::As(type_id) => match value_stack.pop() {
-                Some(x) => {
-                    value_stack.push(x.to(*type_id));
-                }
-                None => unimplemented!("Can't cast non-value"),
-            },
-            Bytecode::Neg => match value_stack.pop() {
-                Some(Value::I64(val)) => {
-                    value_stack.push(Value::I64(-val));
-                }
-                Some(Value::I32(val)) => {
-                    value_stack.push(Value::I32(-val));
-                }
-                Some(Value::UnknownInt(val)) => {
-                    value_stack.push(Value::UnknownInt(-val));
-                }
-                x => unimplemented!("Can't negate values of {:?}", x),
-            },
-            Bytecode::Add => match (value_stack.pop(), value_stack.pop()) {
-                (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
-                    value_stack.push(Value::U64(lhs + rhs));
-                }
-                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
-                    value_stack.push(Value::U32(lhs + rhs));
-                }
-                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
-                    value_stack.push(Value::I64(lhs + rhs));
-                }
-                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
-                    value_stack.push(Value::I32(lhs + rhs));
-                }
-                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
-                    value_stack.push(Value::UnknownInt(lhs + rhs));
-                }
-                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
-            },
-            Bytecode::Sub => match (value_stack.pop(), value_stack.pop()) {
-                (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
-                    value_stack.push(Value::U64(lhs - rhs));
-                }
-                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
-                    value_stack.push(Value::U32(lhs - rhs));
-                }
-                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
-                    value_stack.push(Value::I64(lhs - rhs));
-                }
-                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
-                    value_stack.push(Value::I32(lhs - rhs));
-                }
-                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
-                    value_stack.push(Value::UnknownInt(lhs - rhs));
-                }
-                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
-            },
-            Bytecode::Mul => match (value_stack.pop(), value_stack.pop()) {
-                (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
-                    value_stack.push(Value::U64(lhs * rhs));
-                }
-                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
-                    value_stack.push(Value::U32(lhs * rhs));
-                }
-                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
-                    value_stack.push(Value::I64(lhs * rhs));
-                }
-                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
-                    value_stack.push(Value::I32(lhs * rhs));
-                }
-                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
-                    value_stack.push(Value::UnknownInt(lhs * rhs));
-                }
-                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
-            },
-            Bytecode::Div => match (value_stack.pop(), value_stack.pop()) {
-                (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
-                    value_stack.push(Value::U64(lhs / rhs));
-                }
-                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
-                    value_stack.push(Value::U32(lhs / rhs));
-                }
-                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
-                    value_stack.push(Value::I64(lhs / rhs));
-                }
-                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
-                    value_stack.push(Value::I32(lhs / rhs));
-                }
-                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
-                    value_stack.push(Value::UnknownInt(lhs / rhs));
-                }
-                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
-            },
-            Bytecode::Lt => match (value_stack.pop(), value_stack.pop()) {
-                (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
-                    value_stack.push(Value::Bool(lhs < rhs));
-                }
-                (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
-                    value_stack.push(Value::Bool(lhs < rhs));
-                }
-                (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
-                    value_stack.push(Value::Bool(lhs < rhs));
-                }
-                (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
-                    value_stack.push(Value::Bool(lhs < rhs));
-                }
-                (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
-                    value_stack.push(Value::Bool(lhs < rhs));
-                }
-                (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
-            },
-            Bytecode::Dot(field) => match value_stack.pop() {
-                Some(Value::Object(obj)) => {
-                    if obj.contains_key(field) {
-                        value_stack.push(value_stack[obj[field]].clone())
-                    } else {
-                        unimplemented!("Can not find field {} in object {:#?}", field, obj);
-                    }
-                }
-                _ => {
-                    unimplemented!("Dot access on value that isn't an object");
-                }
-            },
-            Bytecode::LValueDot(field) => match value_stack.pop() {
-                Some(Value::Reference(slot)) => match value_stack[slot] {
-                    Value::Object(ref obj) => {
-                        if obj.contains_key(field) {
-                            value_stack.push(Value::Reference(obj[field]))
-                        } else {
+impl Value {
+    fn into_box_any(self) -> Box<Any> {
+        match self {
+            Value::U64(x) => Box::new(x),
+            Value::U32(x) => Box::new(x),
+            Value::I64(x) => Box::new(x),
+            Value::I32(x) => Box::new(x),
+            Value::UnknownInt(x) => Box::new(x),
+            Value::Bool(x) => Box::new(x),
+            _ => unimplemented!("Currently don't support conversion for this type"),
+        }
+    }
 
-                        }
-                    }
-                    _ => unimplemented!("Field access of non-object"),
+    fn from_box_any(b: Box<Any>) -> Value {
+        if let Some(val) = b.downcast_ref::<u64>() {
+            Value::U64(*val)
+        } else if let Some(val) = b.downcast_ref::<u32>() {
+            Value::U32(*val)
+        } else if let Some(val) = b.downcast_ref::<i64>() {
+            Value::I64(*val)
+        } else if let Some(val) = b.downcast_ref::<i32>() {
+            Value::I32(*val)
+        } else if let Some(val) = b.downcast_ref::<bool>() {
+            Value::Bool(*val)
+        } else if let Some(_) = b.downcast_ref::<()>() {
+            Value::Void
+        } else {
+            unimplemented!("Currently don't support up-conversion for this type")
+        }
+    }
+}
+
+pub struct EvalEngine {
+    pub value_stack: Vec<Value>,
+    extern_fns: HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
+    pub debug_capture: Option<String>,
+}
+
+impl EvalEngine {
+    pub fn new() -> EvalEngine {
+        EvalEngine {
+            value_stack: vec![],
+            extern_fns: HashMap::new(),
+            debug_capture: None,
+        }
+    }
+
+    pub fn eval_block_bytecode(
+        &mut self,
+        bc: &BytecodeEngine,
+        bytecode: &Vec<Bytecode>,
+        var_lookup: &mut HashMap<usize, usize>,
+    ) -> Value {
+        let bytecode_len = bytecode.len();
+        let mut idx = 0;
+        while idx < bytecode_len {
+            let code = &bytecode[idx];
+            match code {
+                Bytecode::ReturnVoid => {
+                    return Value::Void;
+                }
+                Bytecode::ReturnLastStackValue => match self.value_stack.pop() {
+                    Some(s) => return s,
+                    _ => return Value::Error,
                 },
-                _ => {
-                    unimplemented!("Field access into unknown value");
-                }
-            },
-            Bytecode::PushU64(val) => {
-                value_stack.push(Value::U64(*val));
-            }
-            Bytecode::PushU32(val) => {
-                value_stack.push(Value::U32(*val));
-            }
-            Bytecode::PushI64(val) => {
-                value_stack.push(Value::I64(*val));
-            }
-            Bytecode::PushI32(val) => {
-                value_stack.push(Value::I32(*val));
-            }
-            Bytecode::PushUnknownInt(val) => {
-                value_stack.push(Value::UnknownInt(*val));
-            }
-            Bytecode::PushBool(val) => {
-                value_stack.push(Value::Bool(*val));
-            }
-            Bytecode::If(offset, _) => match value_stack.pop() {
-                Some(Value::Bool(cond)) => {
-                    if !cond {
-                        idx += offset;
-                        continue;
-                    }
-                }
-                _ => unimplemented!("Expected boolean condition for if"),
-            },
-            Bytecode::Else(offset, _) => {
-                idx += offset;
-                continue;
-            }
-            Bytecode::EndIf(_) => {}
-            Bytecode::BeginWhile => {}
-            Bytecode::WhileCond(offset) => match value_stack.pop() {
-                Some(Value::Bool(cond)) => {
-                    if !cond {
-                        idx += offset + 1; // Eval will also want to skip the EndWhile
-                        continue;
-                    }
-                }
-                _ => unimplemented!("Expected boolean condition for if"),
-            },
-            Bytecode::EndWhile(offset) => {
-                idx -= offset;
-                continue;
-            }
-            Bytecode::VarDecl(var_id) => {
-                var_lookup.insert(*var_id, value_stack.len() - 1);
-            }
-            Bytecode::VarDeclUninit(var_id) => {
-                //push a dummy value on the stack to give us a slot for a value later
-                value_stack.push(Value::Void);
-                var_lookup.insert(*var_id, value_stack.len() - 1);
-            }
-            Bytecode::Var(var_id) => {
-                let pos: usize = var_lookup[var_id];
-                value_stack.push(value_stack[pos].clone());
-            }
-            Bytecode::LValueVar(var_id) => {
-                let pos: usize = var_lookup[var_id];
-                value_stack.push(Value::Reference(pos));
-            }
-            Bytecode::Assign => match (value_stack.pop(), value_stack.pop()) {
-                (Some(Value::Reference(slot)), Some(rhs)) => {
-                    value_stack[slot] = rhs;
-                }
-                _ => unimplemented!("Assignment missing right-hand side value"),
-            },
-            Bytecode::Call(definition_id) => {
-                if let Definition::Processed(Processed::Fun(ref target_fun)) =
-                    bc.definitions[*definition_id]
-                {
-                    if let Some(ref ex_name) = target_fun.extern_name {
-                        if !externals.contains_key(ex_name) {
-                            prepare_external(ex_name, externals);
+                Bytecode::As(type_id) => match self.value_stack.pop() {
+                    Some(Value::UnknownInt(val)) => match *type_id {
+                        builtin_type::I32 => {
+                            self.value_stack.push(Value::I32(val as i32));
                         }
-                        let result = externals[ex_name](value_stack);
-                        value_stack.push(result);
-                    } else {
-                        let result =
-                            eval_fn_bytecode(bc, target_fun, value_stack, externals, debug_capture);
-                        value_stack.push(result);
-                    }
-                } else if let Definition::Processed(Processed::Struct(ref s)) =
-                    bc.definitions[*definition_id]
-                {
-                    if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
-                        let mut hash = HashMap::new();
-                        let mut offset = 1;
-                        for field in st.fields.iter().rev() {
-                            hash.insert(field.0.clone(), value_stack.len() - offset);
-                            offset += 1;
+                        builtin_type::I64 => {
+                            self.value_stack.push(Value::I64(val as i64));
                         }
-                        value_stack.push(Value::Object(hash))
-                    } else {
-                        unimplemented!("Can not find struct type for object");
+                        builtin_type::U32 => {
+                            self.value_stack.push(Value::U32(val as u32));
+                        }
+                        builtin_type::U64 => {
+                            self.value_stack.push(Value::U64(val as u64));
+                        }
+                        _ => {
+                            unimplemented!("Trying to convert {{unknown int}} to non-integer type");
+                        }
+                    },
+                    Some(x) => self.value_stack.push(x),
+                    None => unimplemented!("Can not do a type conversion of missing value"),
+                },
+                Bytecode::Neg => match self.value_stack.pop() {
+                    Some(Value::I64(val)) => {
+                        self.value_stack.push(Value::I64(-val));
                     }
-                } else {
-                    unimplemented!("Eval of unprocessed function");
-                }
-            }
-            Bytecode::DebugPrint(_) => match value_stack.pop() {
-                Some(s) => match debug_capture {
-                    Some(ref mut debug_log) => {
-                        debug_log.push_str(&format!("DEBUG: {:?}\n", s));
+                    Some(Value::I32(val)) => {
+                        self.value_stack.push(Value::I32(-val));
                     }
-                    None => {
-                        println!("DEBUG: {:?}", s);
+                    Some(Value::UnknownInt(val)) => {
+                        self.value_stack.push(Value::UnknownInt(-val));
+                    }
+                    x => unimplemented!("Can't negate values of {:?}", x),
+                },
+                Bytecode::Add => match (self.value_stack.pop(), self.value_stack.pop()) {
+                    (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
+                        self.value_stack.push(Value::U64(lhs + rhs));
+                    }
+                    (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                        self.value_stack.push(Value::U32(lhs + rhs));
+                    }
+                    (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                        self.value_stack.push(Value::I64(lhs + rhs));
+                    }
+                    (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                        self.value_stack.push(Value::I32(lhs + rhs));
+                    }
+                    (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                        self.value_stack.push(Value::UnknownInt(lhs + rhs));
+                    }
+                    (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+                },
+                Bytecode::Sub => match (self.value_stack.pop(), self.value_stack.pop()) {
+                    (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
+                        self.value_stack.push(Value::U64(lhs - rhs));
+                    }
+                    (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                        self.value_stack.push(Value::U32(lhs - rhs));
+                    }
+                    (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                        self.value_stack.push(Value::I64(lhs - rhs));
+                    }
+                    (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                        self.value_stack.push(Value::I32(lhs - rhs));
+                    }
+                    (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                        self.value_stack.push(Value::UnknownInt(lhs - rhs));
+                    }
+                    (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+                },
+                Bytecode::Mul => match (self.value_stack.pop(), self.value_stack.pop()) {
+                    (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
+                        self.value_stack.push(Value::U64(lhs * rhs));
+                    }
+                    (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                        self.value_stack.push(Value::U32(lhs * rhs));
+                    }
+                    (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                        self.value_stack.push(Value::I64(lhs * rhs));
+                    }
+                    (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                        self.value_stack.push(Value::I32(lhs * rhs));
+                    }
+                    (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                        self.value_stack.push(Value::UnknownInt(lhs * rhs));
+                    }
+                    (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+                },
+                Bytecode::Div => match (self.value_stack.pop(), self.value_stack.pop()) {
+                    (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
+                        self.value_stack.push(Value::U64(lhs / rhs));
+                    }
+                    (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                        self.value_stack.push(Value::U32(lhs / rhs));
+                    }
+                    (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                        self.value_stack.push(Value::I64(lhs / rhs));
+                    }
+                    (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                        self.value_stack.push(Value::I32(lhs / rhs));
+                    }
+                    (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                        self.value_stack.push(Value::UnknownInt(lhs / rhs));
+                    }
+                    (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+                },
+                Bytecode::Lt => match (self.value_stack.pop(), self.value_stack.pop()) {
+                    (Some(Value::U64(rhs)), Some(Value::U64(lhs))) => {
+                        self.value_stack.push(Value::Bool(lhs < rhs));
+                    }
+                    (Some(Value::U32(rhs)), Some(Value::U32(lhs))) => {
+                        self.value_stack.push(Value::Bool(lhs < rhs));
+                    }
+                    (Some(Value::I64(rhs)), Some(Value::I64(lhs))) => {
+                        self.value_stack.push(Value::Bool(lhs < rhs));
+                    }
+                    (Some(Value::I32(rhs)), Some(Value::I32(lhs))) => {
+                        self.value_stack.push(Value::Bool(lhs < rhs));
+                    }
+                    (Some(Value::UnknownInt(rhs)), Some(Value::UnknownInt(lhs))) => {
+                        self.value_stack.push(Value::Bool(lhs < rhs));
+                    }
+                    (x, y) => unimplemented!("Can't add values of {:?} and {:?}", x, y),
+                },
+                Bytecode::Dot(field) => match self.value_stack.pop() {
+                    Some(Value::Object(obj)) => {
+                        if obj.contains_key(field) {
+                            self.value_stack.push(self.value_stack[obj[field]].clone())
+                        } else {
+                            unimplemented!("Can not find field {} in object {:#?}", field, obj);
+                        }
+                    }
+                    _ => {
+                        unimplemented!("Dot access on value that isn't an object");
                     }
                 },
-                _ => unimplemented!("Internal error: debug printing missing value"),
-            },
+                Bytecode::LValueDot(field) => match self.value_stack.pop() {
+                    Some(Value::Reference(slot)) => match self.value_stack[slot] {
+                        Value::Object(ref obj) => {
+                            if obj.contains_key(field) {
+                                self.value_stack.push(Value::Reference(obj[field]))
+                            } else {
+
+                            }
+                        }
+                        _ => unimplemented!("Field access of non-object"),
+                    },
+                    _ => {
+                        unimplemented!("Field access into unknown value");
+                    }
+                },
+                Bytecode::PushU64(val) => {
+                    self.value_stack.push(Value::U64(*val));
+                }
+                Bytecode::PushU32(val) => {
+                    self.value_stack.push(Value::U32(*val));
+                }
+                Bytecode::PushI64(val) => {
+                    self.value_stack.push(Value::I64(*val));
+                }
+                Bytecode::PushI32(val) => {
+                    self.value_stack.push(Value::I32(*val));
+                }
+                Bytecode::PushUnknownInt(val) => {
+                    self.value_stack.push(Value::UnknownInt(*val));
+                }
+                Bytecode::PushBool(val) => {
+                    self.value_stack.push(Value::Bool(*val));
+                }
+                Bytecode::If(offset, _) => match self.value_stack.pop() {
+                    Some(Value::Bool(cond)) => {
+                        if !cond {
+                            idx += offset;
+                            continue;
+                        }
+                    }
+                    _ => unimplemented!("Expected boolean condition for if"),
+                },
+                Bytecode::Else(offset, _) => {
+                    idx += offset;
+                    continue;
+                }
+                Bytecode::EndIf(_) => {}
+                Bytecode::BeginWhile => {}
+                Bytecode::WhileCond(offset) => match self.value_stack.pop() {
+                    Some(Value::Bool(cond)) => {
+                        if !cond {
+                            idx += offset + 1; // Eval will also want to skip the EndWhile
+                            continue;
+                        }
+                    }
+                    _ => unimplemented!("Expected boolean condition for if"),
+                },
+                Bytecode::EndWhile(offset) => {
+                    idx -= offset;
+                    continue;
+                }
+                Bytecode::VarDecl(var_id) => {
+                    var_lookup.insert(*var_id, self.value_stack.len() - 1);
+                }
+                Bytecode::VarDeclUninit(var_id) => {
+                    //push a dummy value on the stack to give us a slot for a value later
+                    self.value_stack.push(Value::Void);
+                    var_lookup.insert(*var_id, self.value_stack.len() - 1);
+                }
+                Bytecode::Var(var_id) => {
+                    let pos: usize = var_lookup[var_id];
+                    self.value_stack.push(self.value_stack[pos].clone());
+                }
+                Bytecode::LValueVar(var_id) => {
+                    let pos: usize = var_lookup[var_id];
+                    self.value_stack.push(Value::Reference(pos));
+                }
+                Bytecode::Assign => match (self.value_stack.pop(), self.value_stack.pop()) {
+                    (Some(Value::Reference(slot)), Some(rhs)) => {
+                        self.value_stack[slot] = rhs;
+                    }
+                    _ => unimplemented!("Assignment missing right-hand side value"),
+                },
+                Bytecode::Call(definition_id) => {
+                    if let Definition::Processed(Processed::Fun(ref target_fun)) =
+                        bc.definitions[*definition_id]
+                    {
+                        if let Some(ref ex_name) = target_fun.extern_name {
+                            let result = self.extern_fns[ex_name](&mut self.value_stack);
+                            self.value_stack.push(result);
+                        } else {
+                            let result = self.eval_fn_bytecode(bc, target_fun);
+                            self.value_stack.push(result);
+                        }
+                    } else if let Definition::Processed(Processed::Struct(ref s)) =
+                        bc.definitions[*definition_id]
+                    {
+                        if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
+                            let mut hash = HashMap::new();
+                            let mut offset = 1;
+                            for field in st.fields.iter().rev() {
+                                hash.insert(field.0.clone(), self.value_stack.len() - offset);
+                                offset += 1;
+                            }
+                            self.value_stack.push(Value::Object(hash))
+                        } else {
+                            unimplemented!("Can not find struct type for object");
+                        }
+                    } else {
+                        unimplemented!("Eval of unprocessed function");
+                    }
+                }
+                Bytecode::DebugPrint(_) => match self.value_stack.pop() {
+                    Some(s) => match self.debug_capture {
+                        Some(ref mut debug_log) => {
+                            debug_log.push_str(&format!("DEBUG: {:?}\n", s));
+                        }
+                        None => {
+                            println!("DEBUG: {:?}", s);
+                        }
+                    },
+                    _ => unimplemented!("Internal error: debug printing missing value"),
+                },
+            }
+
+            idx += 1;
         }
 
-        idx += 1;
+        Value::Void
     }
 
-    Value::Void
-}
+    fn eval_fn_bytecode(&mut self, bc: &BytecodeEngine, fun: &Fun) -> Value {
+        let mut var_lookup: HashMap<usize, usize> = HashMap::new();
 
-fn eval_fn_bytecode(
-    bc: &BytecodeEngine,
-    fun: &Fun,
-    value_stack: &mut Vec<Value>,
-    externals: &mut HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
-    debug_capture: &mut Option<String>,
-) -> Value {
-    let mut var_lookup: HashMap<usize, usize> = HashMap::new();
+        let mut param_offset = fun.params.len();
+        for param in &fun.params {
+            var_lookup.insert(param.var_id, self.value_stack.len() - param_offset);
+            param_offset -= 1;
+        }
 
-    let mut param_offset = fun.params.len();
-    for param in &fun.params {
-        var_lookup.insert(param.var_id, value_stack.len() - param_offset);
-        param_offset -= 1;
+        self.eval_block_bytecode(bc, &fun.bytecode, &mut var_lookup)
     }
 
-    eval_block_bytecode(
-        bc,
-        &fun.bytecode,
-        &mut var_lookup,
-        value_stack,
-        externals,
-        debug_capture,
-    )
-}
+    pub fn register_extern_fn<T: Any, U: Any>(
+        &mut self,
+        name: &str,
+        ex_fn: unsafe extern "C" fn(T) -> U,
+    ) {
+        let fun = Box::new(move |value_stack: &mut Vec<Value>| -> Value {
+            match value_stack.pop() {
+                Some(val) => unsafe {
+                    let arg = val.into_box_any().downcast::<T>().unwrap();
+                    let result = Box::new(ex_fn(*arg));
+                    Value::from_box_any(result)
+                },
+                _ => unimplemented!("Can't call abs on non-i32"),
+            }
+        });
 
-fn prepare_external(
-    ex_name: &str,
-    externals: &mut HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>>,
-) {
-    // Go through the extern function and make sure we wrap it.
-    if ex_name == "abs" {
-        externals.insert(
-            ex_name.to_string(),
-            Box::new(|value_stack: &mut Vec<Value>| -> Value {
-                match value_stack.pop() {
-                    Some(val) => {
-                        let val = val.to(builtin_type::I32);
-                        if let Value::I32(i) = val {
-                            unsafe { Value::I32(abs(i)) }
-                        } else {
-                            unimplemented!("Value can't be converted to i32")
-                        }
-                    }
-                    _ => unimplemented!("Can't call abs on non-i32"),
-                }
-            }),
-        );
+        self.extern_fns.insert(name.to_string(), fun);
     }
-}
 
-/// Begin evaluating the bytecode starting at the given function name.  Optionally, capture the debug output for later use.
-pub fn eval_engine(
-    bc: &BytecodeEngine,
-    starting_fn_name: &str,
-    debug_capture: &mut Option<String>,
-) -> Value {
-    // begin evaluating with the first function
-    // We assume scope 0 is the file root scope of the starting file, where will find the main
+    /// Begin evaluating the bytecode starting at the given function name.  Optionally, capture the debug output for later use.
+    pub fn eval_program(&mut self, bc: &BytecodeEngine, starting_fn_name: &str) -> Value {
+        // begin evaluating with the first function
+        // We assume scope 0 is the file root scope of the starting file, where will find the main
 
-    let mut externals: HashMap<String, Box<Fn(&mut Vec<Value>) -> Value>> = HashMap::new();
+        let fun = bc.get_fn(starting_fn_name, 0);
 
-    let fun = bc.get_fn(starting_fn_name, 0);
-    let mut value_stack: Vec<Value> = vec![];
-
-    eval_fn_bytecode(bc, &fun, &mut value_stack, &mut externals, debug_capture)
+        self.eval_fn_bytecode(bc, &fun)
+    }
 }

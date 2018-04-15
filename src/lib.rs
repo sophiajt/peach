@@ -19,4 +19,4 @@ mod typecheck;
 
 pub use bytecode::{Bytecode, BytecodeEngine, VarStack};
 pub use compile::compile_bytecode;
-pub use eval::{eval_block_bytecode, eval_engine, Value};
+pub use eval::{EvalEngine, Value};

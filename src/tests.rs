@@ -4,7 +4,7 @@ mod tests {
 
     use bytecode::BytecodeEngine;
     use compile;
-    use eval;
+    use eval::EvalEngine;
 
     #[allow(unused_imports)]
     use typecheck;
@@ -28,10 +28,16 @@ mod tests {
     fn run_test(fname: &str, eval_expect: &str, compile_expect: &str) {
         let bc = load_to_bc(fname);
 
+        extern "C" {
+            fn abs(input: i32) -> i32;
+        }
+
         // Eval stage
-        let mut eval_output = Some(String::new());
-        eval::eval_engine(&bc, "main", &mut eval_output);
-        assert_eq!(eval_expect, eval_output.unwrap().trim());
+        let mut ee = EvalEngine::new();
+        ee.debug_capture = Some(String::new());
+        ee.register_extern_fn("abs", abs);
+        ee.eval_program(&bc, "main");
+        assert_eq!(eval_expect, ee.debug_capture.unwrap().trim());
 
         // Compile stage
         let compile_result = compile::compile_bytecode(&bc, fname);
