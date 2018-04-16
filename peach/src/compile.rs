@@ -363,14 +363,6 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     for definition_id in 0..bc.definitions.len() {
         if let Definition::Processed(Processed::Fun(ref fun)) = bc.definitions[definition_id] {
             if definition_id != starting_fn_id {
-                /*
-                let header = format!(
-                    "{} fun_{}();\n",
-                    codegen_type(fun.return_type_id),
-                    definition_id
-                );
-                cfile.codegen_raw(&header);
-                */
                 match fun.extern_name {
                     Some(ref ex_name) => {
                         cfile.codegen_raw(&format!(
@@ -521,8 +513,6 @@ fn compile_file(path: ::std::path::PathBuf) -> ::std::io::Result<String> {
         .arg("/w")
         .arg(&format!("/Fe{}", output_fname))
         .arg(&format!("/Fo{}", output_objname))
-        .arg(&format!("SDL2.lib"))  //TODO: FIXME: Make these options
-        .arg(&format!("SDL2main.lib")) // TODO: FIXME: ditto
         .arg(path)
         .output()?;
     let end = PreciseTime::now();

@@ -180,8 +180,8 @@ impl Scope {
 /// No processing is done by default.  Once a file is loaded, you must then process the file by giving a function name to begin with.
 /// Eg)
 /// ```no_run
-/// extern crate peachlib;
-/// use peachlib::BytecodeEngine;
+/// extern crate peach;
+/// use peach::BytecodeEngine;
 ///
 /// let mut bc = BytecodeEngine::new();
 /// bc.load_file("bin.rs");
