@@ -115,8 +115,12 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             Bytecode::PushUnknownInt(val) => {
                 cfile.delay_expr(val.to_string());
             }
-            Bytecode::PushRawNullPtr => {
-                cfile.delay_expr("NULL".to_string());
+            Bytecode::PushRawPtr(p) => {
+                if p.is_null() {
+                    cfile.delay_expr("NULL".to_string());
+                } else {
+                    unimplemented!("Unsupported pointer type");
+                }
             }
             Bytecode::PushBool(val) => {
                 cfile.delay_expr(val.to_string());

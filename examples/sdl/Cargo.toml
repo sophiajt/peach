@@ -1,0 +1,7 @@
+[package]
+name = "sdl"
+version = "0.1.0"
+authors = ["Jonathan Turner <jonathan.d.turner@gmail.com>"]
+
+[dependencies]
+peach = {path= "../../peach"}

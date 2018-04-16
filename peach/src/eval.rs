@@ -279,8 +279,12 @@ impl EvalEngine {
                 Bytecode::PushBool(val) => {
                     self.value_stack.push(Value::Bool(*val));
                 }
-                Bytecode::PushRawNullPtr => {
-                    self.value_stack.push(Value::RawPtr(ptr::null()));
+                Bytecode::PushRawPtr(val) => {
+                    if val.is_null() {
+                        self.value_stack.push(Value::RawPtr(ptr::null()));
+                    } else {
+                        unimplemented!("Unsupported pointer type")
+                    }
                 }
                 Bytecode::If(offset, _) => match self.value_stack.pop() {
                     Some(Value::Bool(cond)) => {
@@ -402,35 +406,22 @@ impl EvalEngine {
         self.eval_fn_bytecode(bc, &fun)
     }
 
-    /*
-    pub fn register_rust_fn<T: Any, U: Any>(&mut self, name: &str, rust_fn: fn(T) -> U) {
-        let fun = Box::new(move |value_stack: &mut Vec<Value>| -> Value {
-            match value_stack.pop() {
-                Some(val) => {
-                    let arg = val.into_box_any().downcast::<T>().unwrap();
-                    let result = Box::new(rust_fn(*arg));
-                    Value::from_box_any(result)
-                }
-                _ => unimplemented!("Can't call abs on non-i32"),
-            }
-        });
-
-        self.extern_fns.insert(name.to_string(), fun);
-    }
-    */
-
-    pub fn register_extern_fn_0_0(&mut self, name: &str, ex_fn: unsafe extern "C" fn() -> ()) {
+    pub fn register_extern_fn_0<Ret: Any>(
+        &mut self,
+        name: &str,
+        ex_fn: unsafe extern "C" fn() -> Ret,
+    ) {
         let fun = Box::new(move |_value_stack: &mut Vec<Value>| -> Value {
             unsafe {
-                ex_fn();
+                let result = Box::new(ex_fn());
+                Value::from_box_any(result)
             }
-            Value::Void
         });
 
         self.extern_fns.insert(name.to_string(), fun);
     }
 
-    pub fn register_extern_fn_1_1<Arg1: Any, Ret: Any>(
+    pub fn register_extern_fn_1<Arg1: Any, Ret: Any>(
         &mut self,
         name: &str,
         ex_fn: unsafe extern "C" fn(Arg1) -> Ret,
@@ -449,7 +440,27 @@ impl EvalEngine {
         self.extern_fns.insert(name.to_string(), fun);
     }
 
-    pub fn register_extern_fn_3_1<Arg1: Any, Arg2: Any, Arg3: Any, Ret: Any>(
+    pub fn register_extern_fn_2<Arg1: Any, Arg2: Any, Ret: Any>(
+        &mut self,
+        name: &str,
+        ex_fn: unsafe extern "C" fn(Arg1, Arg2) -> Ret,
+    ) {
+        let fun = Box::new(move |value_stack: &mut Vec<Value>| -> Value {
+            match (value_stack.pop(), value_stack.pop()) {
+                (Some(val2), Some(val1)) => unsafe {
+                    let arg1 = val1.into_box_any().downcast::<Arg1>().unwrap();
+                    let arg2 = val2.into_box_any().downcast::<Arg2>().unwrap();
+                    let result = Box::new(ex_fn(*arg1, *arg2));
+                    Value::from_box_any(result)
+                },
+                _ => unimplemented!("Can't call function successfully"),
+            }
+        });
+
+        self.extern_fns.insert(name.to_string(), fun);
+    }
+
+    pub fn register_extern_fn_3<Arg1: Any, Arg2: Any, Arg3: Any, Ret: Any>(
         &mut self,
         name: &str,
         ex_fn: unsafe extern "C" fn(Arg1, Arg2, Arg3) -> Ret,
@@ -470,7 +481,61 @@ impl EvalEngine {
         self.extern_fns.insert(name.to_string(), fun);
     }
 
-    pub fn register_extern_fn_6_1<
+    pub fn register_extern_fn_4<Arg1: Any, Arg2: Any, Arg3: Any, Arg4: Any, Ret: Any>(
+        &mut self,
+        name: &str,
+        ex_fn: unsafe extern "C" fn(Arg1, Arg2, Arg3, Arg4) -> Ret,
+    ) {
+        let fun = Box::new(move |value_stack: &mut Vec<Value>| -> Value {
+            match (
+                value_stack.pop(),
+                value_stack.pop(),
+                value_stack.pop(),
+                value_stack.pop(),
+            ) {
+                (Some(val4), Some(val3), Some(val2), Some(val1)) => unsafe {
+                    let arg1 = val1.into_box_any().downcast::<Arg1>().unwrap();
+                    let arg2 = val2.into_box_any().downcast::<Arg2>().unwrap();
+                    let arg3 = val3.into_box_any().downcast::<Arg3>().unwrap();
+                    let arg4 = val4.into_box_any().downcast::<Arg4>().unwrap();
+                    let result = Box::new(ex_fn(*arg1, *arg2, *arg3, *arg4));
+                    Value::from_box_any(result)
+                },
+                _ => unimplemented!("Can't call function successfully"),
+            }
+        });
+        self.extern_fns.insert(name.to_string(), fun);
+    }
+
+    pub fn register_extern_fn_5<Arg1: Any, Arg2: Any, Arg3: Any, Arg4: Any, Arg5: Any, Ret: Any>(
+        &mut self,
+        name: &str,
+        ex_fn: unsafe extern "C" fn(Arg1, Arg2, Arg3, Arg4, Arg5) -> Ret,
+    ) {
+        let fun = Box::new(move |value_stack: &mut Vec<Value>| -> Value {
+            match (
+                value_stack.pop(),
+                value_stack.pop(),
+                value_stack.pop(),
+                value_stack.pop(),
+                value_stack.pop(),
+            ) {
+                (Some(val5), Some(val4), Some(val3), Some(val2), Some(val1)) => unsafe {
+                    let arg1 = val1.into_box_any().downcast::<Arg1>().unwrap();
+                    let arg2 = val2.into_box_any().downcast::<Arg2>().unwrap();
+                    let arg3 = val3.into_box_any().downcast::<Arg3>().unwrap();
+                    let arg4 = val4.into_box_any().downcast::<Arg4>().unwrap();
+                    let arg5 = val5.into_box_any().downcast::<Arg5>().unwrap();
+                    let result = Box::new(ex_fn(*arg1, *arg2, *arg3, *arg4, *arg5));
+                    Value::from_box_any(result)
+                },
+                _ => unimplemented!("Can't call function successfully"),
+            }
+        });
+        self.extern_fns.insert(name.to_string(), fun);
+    }
+
+    pub fn register_extern_fn_6<
         Arg1: Any,
         Arg2: Any,
         Arg3: Any,

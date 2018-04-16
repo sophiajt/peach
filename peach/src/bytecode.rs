@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use std::os::raw::c_void;
 use syn::{self, FnArg, ForeignItem, Item, ItemFn, ItemMod, ItemStruct, Pat, ReturnType};
 use typecheck::{builtin_type, TypeChecker, TypeId};
 
@@ -19,7 +20,7 @@ pub enum Bytecode {
     PushI32(i32),
     PushUnknownInt(i32),
     PushBool(bool),
-    PushRawNullPtr,
+    PushRawPtr(*const c_void),
     As(TypeId),
     Add,
     Sub,

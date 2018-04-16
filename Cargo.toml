@@ -1,13 +1,6 @@
-[package]
-name = "peach"
-version = "0.1.0"
-authors = ["Jonathan Turner <jonathan.d.turner@gmail.com>"]
-
-[dependencies]
-syn = {version = "0.13", features = ["full", "extra-traits"] }
-time = "*"
-proc-macro2 = "0.3.6"
-
-[lib]
-name = "peachlib"
-path = "src/lib.rs"
+[workspace]
+members = [
+    "peach",
+    "peach_cli",
+    "examples/sdl"
+]

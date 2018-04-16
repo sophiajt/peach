@@ -13,6 +13,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "peach_cli"
+version = "0.1.0"
+dependencies = [
+ "peach 0.1.0",
+ "proc-macro2 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -32,6 +42,13 @@ dependencies = [
 name = "redox_syscall"
 version = "0.1.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "sdl"
+version = "0.1.0"
+dependencies = [
+ "peach 0.1.0",
+]
 
 [[package]]
 name = "syn"

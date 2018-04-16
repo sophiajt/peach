@@ -1,6 +1,7 @@
 use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param, Processed,
                Scope, ScopeId, VarStack};
 use proc_macro2::TokenStream;
+use std::ptr;
 use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, Lit, Member, Pat, ReturnType, Stmt,
           Type, UnOp};
 use typecheck::{builtin_type, TypeId, TypeInfo};
@@ -686,7 +687,7 @@ impl BytecodeEngine {
                     let var_id = var_stack.find_var(&ident);
                     if var_id.is_none() {
                         if ident == "NULL" {
-                            bytecode.push(Bytecode::PushRawNullPtr);
+                            bytecode.push(Bytecode::PushRawPtr(ptr::null()));
                             builtin_type::VOID_PTR
                         } else {
                             unimplemented!("Could not find {}", ident);
