@@ -1,4 +1,6 @@
-pub(crate) type TypeId = usize;
+use bytecode::engine::BytecodeEngine;
+
+pub type TypeId = usize;
 
 pub mod builtin_type {
     use super::*;
@@ -14,30 +16,16 @@ pub mod builtin_type {
     pub const ERROR: TypeId = 9;
 }
 
-pub(crate) struct StructType {
-    pub(crate) fields: Vec<(String, TypeId)>,
+pub struct StructType {
+    pub fields: Vec<(String, TypeId)>,
 }
 
-pub(crate) enum TypeInfo {
+pub enum TypeInfo {
     Builtin,
     Struct(StructType),
 }
 
-pub struct TypeChecker {
-    pub(crate) types: Vec<TypeInfo>,
-}
-
-impl TypeChecker {
-    pub fn new() -> TypeChecker {
-        let mut types = vec![];
-
-        for _ in 0..(builtin_type::ERROR + 1) {
-            types.push(TypeInfo::Builtin);
-        }
-
-        TypeChecker { types }
-    }
-
+impl BytecodeEngine {
     pub fn new_struct(&mut self, fields: Vec<(String, TypeId)>) -> TypeId {
         self.types.push(TypeInfo::Struct(StructType { fields }));
 

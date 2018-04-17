@@ -1,10 +1,9 @@
-use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
+use bytecode::{builtin_type, Bytecode, BytecodeEngine, Definition, Fun, Processed, TypeInfo};
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
 use std::os::raw::c_void;
 use std::ptr;
-use typecheck::{builtin_type, TypeInfo};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -350,7 +349,7 @@ impl EvalEngine {
                     } else if let Definition::Processed(Processed::Struct(ref s)) =
                         bc.definitions[*definition_id]
                     {
-                        if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
+                        if let TypeInfo::Struct(ref st) = bc.types[s.type_id] {
                             let mut hash = HashMap::new();
                             let mut offset = 1;
                             for field in st.fields.iter().rev() {

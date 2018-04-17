@@ -1,6 +1,6 @@
-use bytecode::{Bytecode, BytecodeEngine, Definition, Fun, Processed};
+use bytecode::{builtin_type, Bytecode, BytecodeEngine, Definition, Fun, Processed, TypeId,
+               TypeInfo};
 use time::PreciseTime;
-use typecheck::{builtin_type, TypeId, TypeInfo};
 
 struct CFile {
     output_src: String,
@@ -235,7 +235,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                     let mut expr_string = format!("init_struct_{}(", s.type_id);
                     let expression_stack_len = cfile.expression_stack.len();
 
-                    if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
+                    if let TypeInfo::Struct(ref st) = bc.types[s.type_id] {
                         let mut offset = st.fields.len();
                         while offset > 0 {
                             expr_string += &cfile.expression_stack[expression_stack_len - offset];
@@ -417,7 +417,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
         } else if let Definition::Processed(Processed::Struct(ref s)) =
             bc.definitions[definition_id]
         {
-            if let TypeInfo::Struct(ref st) = bc.typechecker.types[s.type_id] {
+            if let TypeInfo::Struct(ref st) = bc.types[s.type_id] {
                 if st.fields.len() == 0 {
                     cfile.codegen_raw(&format!("struct struct_{} {{int dummy;}};\n", s.type_id));
                 } else {

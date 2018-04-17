@@ -11,11 +11,9 @@ extern crate syn;
 extern crate time;
 
 mod bytecode;
-mod bytecode_ast;
 mod compile;
 mod eval;
 mod tests;
-mod typecheck;
 
 pub use bytecode::{Bytecode, BytecodeEngine, VarStack};
 pub use compile::compile_bytecode;

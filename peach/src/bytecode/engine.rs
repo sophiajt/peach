@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
+use bytecode::typecheck::{builtin_type, TypeId, TypeInfo};
 use std::os::raw::c_void;
-use syn::{self, FnArg, ForeignItem, Item, ItemFn, ItemMod, ItemStruct, Pat, ReturnType};
-use typecheck::{builtin_type, TypeChecker, TypeId};
+use syn::{self, Block, FnArg, FnDecl, ForeignItem, ImplItem, Item, ItemImpl, ItemMod, ItemStruct,
+          Pat, ReturnType};
 
 pub(crate) type ScopeId = usize;
 pub(crate) type DefinitionId = usize;
@@ -63,7 +64,6 @@ impl Param {
     }
 }
 
-//TODO: should VarDecl and Param be merged?
 #[derive(Clone, Debug, Ord, Eq, PartialOrd, PartialEq)]
 pub struct VarDecl {
     pub ident: String,
@@ -137,22 +137,35 @@ impl Struct {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum Lazy {
-    ItemFn(ItemFn),
-    ItemMod(ItemMod),
-    ItemStruct(ItemStruct),
+#[derive(Debug, Clone)]
+pub struct LazyFn {
+    pub decl: FnDecl,
+    pub block: Block,
+}
+
+impl LazyFn {
+    pub fn new(decl: FnDecl, block: Block) -> LazyFn {
+        LazyFn { decl, block }
+    }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Processed {
+pub enum Lazy {
+    ItemFn(LazyFn),
+    ItemMod(ItemMod),
+    ItemStruct(ItemStruct),
+    ItemImpl(ItemImpl),
+}
+
+#[derive(Clone, Debug)]
+pub enum Processed {
     Fun(Fun),
     Mod(Mod),
     Struct(Struct),
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Definition {
+pub enum Definition {
     Lazy(Lazy),
     Processed(Processed),
 }
@@ -175,7 +188,8 @@ impl Scope {
 
 /// BytecodeEngine is the root of Peach's work.  Here code is converted from source files to an intermediate bytecode format
 /// First, the file is parsed into an AST.  Once an AST, further computation is delayed until definitions are required.
-/// This allows conversion from AST to definitions to happen lazily.
+/// This allows conversion from AST to definitions to happen lazily.  The engine will maintain state, so that repeated
+/// invocations can see the definitions created in previous invocations.
 ///
 /// No processing is done by default.  Once a file is loaded, you must then process the file by giving a function name to begin with.
 /// Eg)
@@ -192,13 +206,17 @@ pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) definitions: Vec<Definition>,
     pub(crate) project_root: Option<::std::path::PathBuf>,
-
-    //TODO: FIXME: probably want to make this pub(crate) at some point
-    pub typechecker: TypeChecker,
+    pub(crate) types: Vec<TypeInfo>,
 }
 
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
+        let mut types = vec![];
+
+        for _ in 0..(builtin_type::ERROR + 1) {
+            types.push(TypeInfo::Builtin);
+        }
+
         BytecodeEngine {
             scopes: vec![Scope {
                 parent: None,
@@ -207,7 +225,7 @@ impl BytecodeEngine {
             }],
             definitions: vec![],
             project_root: None,
-            typechecker: TypeChecker::new(),
+            types,
         }
     }
 
@@ -301,7 +319,10 @@ impl BytecodeEngine {
                 // Adds a function to be processed lazily
                 let fn_name = item_fn.ident.to_string();
                 self.definitions
-                    .push(Definition::Lazy(Lazy::ItemFn(item_fn)));
+                    .push(Definition::Lazy(Lazy::ItemFn(LazyFn::new(
+                        *item_fn.decl,
+                        *item_fn.block,
+                    ))));
                 self.scopes[current_scope_id]
                     .definitions
                     .insert(fn_name, self.definitions.len() - 1);
@@ -360,6 +381,10 @@ impl BytecodeEngine {
                     _ => unimplemented!("Unsupported foreign item"),
                 }
             },
+            Item::Impl(item_impl) => {
+                //let impl_name = item_impl.sig.ident.to_string();
+                println!("{:#?}", item_impl);
+            }
             Item::Mod(item_mod) => {
                 if item_mod.content.is_none() {
                     //Load the file as a module
@@ -474,7 +499,7 @@ impl BytecodeEngine {
 
             fields.sort();
 
-            let type_id = self.typechecker.new_struct(fields);
+            let type_id = self.new_struct(fields);
             let s = Struct::new(type_id);
             self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
 
@@ -500,10 +525,48 @@ impl BytecodeEngine {
 
                 self.definitions[definition_id] =
                     Definition::Processed(Processed::Mod(Mod::new(mod_scope_id)));
+            } else if let Definition::Processed(Processed::Mod(_)) = self.definitions[definition_id]
+            {
+
+            } else {
+                unimplemented!("Processing definition that is not a lazy module");
             }
             definition_id
         } else {
             unimplemented!("Can not find mod {}", mod_name);
+        }
+    }
+
+    fn process_impl(&mut self, impl_name: &str, scope_id: ScopeId) -> DefinitionId {
+        if let Some((definition_id, current_scope_id)) = self.get_defn(impl_name, scope_id) {
+            if let Definition::Lazy(Lazy::ItemImpl(item_impl)) =
+                self.definitions[definition_id].clone()
+            {
+                self.scopes.push(Scope::new(Some(current_scope_id), true));
+                let impl_scope_id = self.scopes.len() - 1;
+                for item in item_impl.items {
+                    match item {
+                        ImplItem::Method(impl_item_method) => {
+                            // Adds a function to be processed lazily
+                            let fn_name = impl_item_method.sig.ident.to_string();
+                            self.definitions
+                                .push(Definition::Lazy(Lazy::ItemFn(LazyFn::new(
+                                    impl_item_method.sig.decl,
+                                    impl_item_method.block,
+                                ))));
+                            self.scopes[impl_scope_id]
+                                .definitions
+                                .insert(fn_name, self.definitions.len() - 1);
+                        }
+                        _ => unimplemented!("Unsupport item type when processing impl"),
+                    }
+                }
+            } else {
+                unimplemented!("Processing definition that is not a lazy impl");
+            }
+            definition_id
+        } else {
+            unimplemented!("Could not find impl {}", impl_name);
         }
     }
 
@@ -514,6 +577,7 @@ impl BytecodeEngine {
                     Lazy::ItemFn(_) => self.process_fn(name, scope_id),
                     Lazy::ItemMod(_) => self.process_mod(name, scope_id),
                     Lazy::ItemStruct(_) => self.process_struct(name, scope_id),
+                    Lazy::ItemImpl(_) => self.process_impl(name, scope_id),
                 };
                 Some(result)
             } else {

@@ -1,10 +1,10 @@
-use bytecode::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param, Processed,
-               Scope, ScopeId, VarStack};
+use bytecode::engine::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param,
+                       Processed, Scope, ScopeId, VarStack};
+use bytecode::typecheck::{builtin_type, TypeId, TypeInfo};
 use proc_macro2::TokenStream;
 use std::ptr;
 use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, Lit, Member, Pat, ReturnType, Stmt,
           Type, UnOp};
-use typecheck::{builtin_type, TypeId, TypeInfo};
 
 impl BytecodeEngine {
     pub(crate) fn convert_fn_to_bytecode(
@@ -63,13 +63,11 @@ impl BytecodeEngine {
                 match bytecode.last() {
                     Some(Bytecode::ReturnVoid) | Some(Bytecode::ReturnLastStackValue) => {}
                     _ => {
-                        if !self.typechecker
-                            .assignment_compatible(return_type_id, block_type_id)
-                        {
+                        if !self.assignment_compatible(return_type_id, block_type_id) {
                             unimplemented!(
                                 "Mismatched return types: {} and {}",
-                                self.typechecker.printable_name(block_type_id),
-                                self.typechecker.printable_name(return_type_id),
+                                self.printable_name(block_type_id),
+                                self.printable_name(return_type_id),
                             );
                         }
                     }
@@ -185,9 +183,9 @@ impl BytecodeEngine {
                             Some(ref explicit_ty) => {
                                 let var_ty = self.resolve_type(&*explicit_ty.1, current_scope_id);
 
-                                if !self.typechecker.assignment_compatible(var_ty, rhs_ty) {
+                                if !self.assignment_compatible(var_ty, rhs_ty) {
                                     unimplemented!(
-                                        "Explicit variable type '{}' does not match expression type '{}'", self.typechecker.printable_name(var_ty), self.typechecker.printable_name(rhs_ty)
+                                        "Explicit variable type '{}' does not match expression type '{}'", self.printable_name(var_ty), self.printable_name(rhs_ty)
                                     )
                                 }
 
@@ -252,7 +250,7 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                if let TypeInfo::Struct(ref st) = self.typechecker.types[type_id] {
+                if let TypeInfo::Struct(ref st) = self.types[type_id] {
                     match ef.member {
                         Member::Named(ident) => {
                             bytecode.push(Bytecode::LValueDot(ident.to_string()));
@@ -293,9 +291,7 @@ impl BytecodeEngine {
                     None => builtin_type::VOID,
                 };
 
-                if self.typechecker
-                    .assignment_compatible(expected_return_type, actual_return_type)
-                {
+                if self.assignment_compatible(expected_return_type, actual_return_type) {
                     match actual_return_type {
                         builtin_type::VOID => bytecode.push(Bytecode::ReturnVoid),
                         _ => bytecode.push(Bytecode::ReturnLastStackValue),
@@ -304,8 +300,8 @@ impl BytecodeEngine {
                 } else {
                     unimplemented!(
                         "Mismatched return types: {} and {}",
-                        self.typechecker.printable_name(actual_return_type),
-                        self.typechecker.printable_name(expected_return_type)
+                        self.printable_name(actual_return_type),
+                        self.printable_name(expected_return_type)
                     );
                 }
             }
@@ -369,8 +365,8 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                if self.typechecker.assignment_compatible(lhs_type, rhs_type) {
-                    let tighter_type = self.typechecker.tighter_of_types(lhs_type, rhs_type);
+                if self.assignment_compatible(lhs_type, rhs_type) {
+                    let tighter_type = self.tighter_of_types(lhs_type, rhs_type);
                     match bytecode.last() {
                         Some(Bytecode::LValueVar(var_id)) => {
                             var_stack.vars[*var_id].type_id = tighter_type;
@@ -530,9 +526,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
+                    if self.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Add);
-                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
+                        self.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!("Can't add values of {:?} and {:?}", lhs_type, rhs_type);
                     }
@@ -552,9 +548,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
+                    if self.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Sub);
-                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
+                        self.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!(
                             "Can't subtract values of {:?} and {:?}",
@@ -578,9 +574,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
+                    if self.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Mul);
-                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
+                        self.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!(
                             "Can't multiply values of {:?} and {:?}",
@@ -604,9 +600,9 @@ impl BytecodeEngine {
                         current_scope_id,
                         var_stack,
                     );
-                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
+                    if self.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Div);
-                        self.typechecker.tighter_of_types(lhs_type, rhs_type)
+                        self.tighter_of_types(lhs_type, rhs_type)
                     } else {
                         unimplemented!("Can't divide values of {:?} and {:?}", lhs_type, rhs_type);
                     }
@@ -627,7 +623,7 @@ impl BytecodeEngine {
                         var_stack,
                     );
 
-                    if self.typechecker.operator_compatible(lhs_type, rhs_type) {
+                    if self.operator_compatible(lhs_type, rhs_type) {
                         bytecode.push(Bytecode::Lt);
                         builtin_type::BOOL
                     } else {
@@ -778,7 +774,7 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                if let TypeInfo::Struct(ref st) = self.typechecker.types[type_id] {
+                if let TypeInfo::Struct(ref st) = self.types[type_id] {
                     match ef.member {
                         Member::Named(ident) => {
                             bytecode.push(Bytecode::Dot(ident.to_string()));

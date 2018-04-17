@@ -66,7 +66,7 @@ pub fn repl() {
 
         if let Ok(type_id) = bc.process_raw_expr_str(&input, &mut bytecode, &mut var_stack) {
             if show_type {
-                println!("type: {}", bc.typechecker.printable_name(type_id));
+                println!("type: {}", bc.printable_name(type_id));
             }
             if show_bytecode {
                 println!("bytecode: {:?}", bytecode);

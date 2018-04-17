@@ -2,14 +2,10 @@
 mod tests {
     use std::process::Command;
 
-    use bytecode::BytecodeEngine;
+    use bytecode::{builtin_type, BytecodeEngine};
     use compile;
     use eval::EvalEngine;
 
-    #[allow(unused_imports)]
-    use typecheck;
-
-    #[allow(dead_code)]
     fn load_to_bc(fname: &str) -> BytecodeEngine {
         let mut bc = BytecodeEngine::new();
 
@@ -24,7 +20,6 @@ mod tests {
         bc
     }
 
-    #[allow(dead_code)]
     fn run_test(fname: &str, eval_expect: &str, compile_expect: &str) {
         let bc = load_to_bc(fname);
 
@@ -51,7 +46,6 @@ mod tests {
         assert_eq!(test_output.trim(), compile_expect);
     }
 
-    #[allow(dead_code)]
     fn run_bad_test(fname: &str, expected_error_msg: &str) {
         use std::panic;
 
@@ -330,10 +324,7 @@ mod tests {
 
     #[test]
     fn test_struct01() {
-        let custom_type_id_string = format!(
-            "DEBUG: <custom type:{}>",
-            typecheck::builtin_type::ERROR + 1
-        );
+        let custom_type_id_string = format!("DEBUG: <custom type:{}>", builtin_type::ERROR + 1);
         run_test("struct01.rs", "DEBUG: Object({})", &custom_type_id_string);
     }
 
