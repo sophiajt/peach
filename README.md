@@ -30,6 +30,7 @@ Some possible next steps:
 * (DONE) Basic println support
 * (DONE) Negate.
 * (DONE) Add simple number-converting "as" to handle broken expr tests
+* TODO: Probably need to split the value and type namespaces
 * TODO: mutability check
 * TODO: consistent naming
 * TODO: mod visibility

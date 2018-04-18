@@ -359,6 +359,21 @@ mod tests {
     }
 
     #[test]
+    fn test_generic01() {
+        run_test("generic01.rs", "DEBUG: UnknownInt(4)", "DEBUG: 4");
+    }
+
+    #[test]
+    fn test_generic02() {
+        run_test("generic02.rs", "DEBUG: UnknownInt(8)", "DEBUG: 8");
+    }
+
+    #[test]
+    fn test_generic_bad01() {
+        run_bad_test("generic_bad01.rs", "add values of");
+    }
+
+    #[test]
     fn test_while01() {
         run_test("while01.rs", "DEBUG: UnknownInt(10)", "DEBUG: 10");
     }

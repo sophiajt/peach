@@ -32,7 +32,11 @@ impl CFile {
     }
 }
 
-fn codegen_type(bc: &BytecodeEngine, definition_id: DefinitionId) -> String {
+fn codegen_type(
+    bc: &BytecodeEngine,
+    definition_id: DefinitionId,
+    instantiations: Option<&Vec<(DefinitionId, DefinitionId)>>,
+) -> String {
     let codegen_ty = match definition_id {
         builtin_type::U64 => "unsigned long long".into(),
         builtin_type::U32 => "unsigned".into(),
@@ -46,6 +50,17 @@ fn codegen_type(bc: &BytecodeEngine, definition_id: DefinitionId) -> String {
             if let Definition::Struct(_) = bc.definitions[definition_id] {
                 //For now, let's assume all custom types are structs
                 format!("struct struct_{}", ty)
+            } else if let Definition::TypeVariable = bc.definitions[definition_id] {
+                let sub = instantiations
+                    .unwrap()
+                    .iter()
+                    .find(|x| x.0 == definition_id);
+                match sub {
+                    Some(x) => codegen_type(bc, x.1, instantiations),
+                    None => {
+                        unimplemented!("Can't find appropriate substitution during instantiation")
+                    }
+                }
             } else {
                 unimplemented!("Expected struct during codegen_type");
             }
@@ -54,7 +69,13 @@ fn codegen_type(bc: &BytecodeEngine, definition_id: DefinitionId) -> String {
     codegen_ty
 }
 
-fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) {
+fn codegen_fn(
+    cfile: &mut CFile,
+    bc: &BytecodeEngine,
+    fn_name: &str,
+    fun: &Fun,
+    instantiations: Option<&Vec<(DefinitionId, DefinitionId)>>,
+) {
     let mut next_temp_id = 0;
 
     //TODO: This isn't the best solution, but it's an experiment
@@ -62,7 +83,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
     cfile.codegen_raw(&format!(
         "{} {}(",
-        &codegen_type(bc, fun.return_ty),
+        &codegen_type(bc, fun.return_ty, instantiations),
         fn_name
     ));
 
@@ -71,7 +92,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
         cfile.codegen_raw(&format!(
             "{}{} {}",
             if !first { ", " } else { "" },
-            codegen_type(bc, param.ty),
+            codegen_type(bc, param.ty, instantiations),
             param.name
         ));
         first = false;
@@ -82,7 +103,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
     for param in &fun.params {
         cfile.codegen_raw(&format!(
             "{} v{} = {};\n",
-            codegen_type(bc, param.ty),
+            codegen_type(bc, param.ty, instantiations),
             param.var_id,
             param.name
         ));
@@ -101,7 +122,11 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
             }
             Bytecode::As(ty) => {
                 let val = cfile.expression_stack.pop().unwrap();
-                cfile.delay_expr(format!("(({})({}))", codegen_type(bc, *ty), val));
+                cfile.delay_expr(format!(
+                    "(({})({}))",
+                    codegen_type(bc, *ty, instantiations),
+                    val
+                ));
             }
             Bytecode::PushU64(val) => {
                 cfile.delay_expr(val.to_string());
@@ -182,14 +207,18 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
 
                 cfile.codegen_stmt(&format!(
                     "{} v{} = {};\n",
-                    codegen_type(bc, var.ty),
+                    codegen_type(bc, var.ty, instantiations),
                     *var_id,
                     rhs
                 ));
             }
             Bytecode::VarDeclUninit(var_id) => {
                 let var = &fun.vars[*var_id];
-                cfile.codegen_stmt(&format!("{} v{};\n", codegen_type(bc, var.ty), *var_id));
+                cfile.codegen_stmt(&format!(
+                    "{} v{};\n",
+                    codegen_type(bc, var.ty, instantiations),
+                    *var_id
+                ));
             }
             Bytecode::Var(var_id) => {
                 cfile.delay_expr(format!("v{}", var_id));
@@ -249,6 +278,29 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                     }
 
                     cfile.delay_expr(expr_string);
+                } else if let Definition::InstantiatedFun(orig_id, _) =
+                    bc.definitions[*definition_id]
+                {
+                    //TODO: FIXME: Refactor this to not duplicate code
+                    if let Definition::Fun(ref fun) = bc.definitions[orig_id] {
+                        let mut expr_string = String::new();
+                        expr_string += &format!("fun_{}(", definition_id);
+                        let expression_stack_len = cfile.expression_stack.len();
+                        let mut offset = fun.params.len();
+                        while offset > 0 {
+                            expr_string += &cfile.expression_stack[expression_stack_len - offset];
+                            if offset > 1 {
+                                expr_string += ", "
+                            }
+                            offset -= 1;
+                        }
+
+                        expr_string += ")";
+                        for _ in 0..fun.params.len() {
+                            cfile.expression_stack.pop();
+                        }
+                        cfile.delay_expr(expr_string);
+                    }
                 } else {
                     unimplemented!("Attempt to call unprocessed function");
                 }
@@ -265,7 +317,7 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
                     | builtin_type::UNKNOWN_INT => {
                         cfile.codegen_stmt(&format!(
                             "{} t{};\n",
-                            codegen_type(bc, *ty),
+                            codegen_type(bc, *ty, instantiations),
                             next_temp_id
                         ));
                         temp_id_stack.push(next_temp_id);
@@ -330,6 +382,175 @@ fn codegen_fn(cfile: &mut CFile, bc: &BytecodeEngine, fn_name: &str, fun: &Fun) 
     cfile.codegen_stmt("};\n");
 }
 
+fn codegen_c_prototype(
+    cfile: &mut CFile,
+    bc: &BytecodeEngine,
+    definition_id: DefinitionId,
+    starting_fn_id: DefinitionId,
+    instantiations: Option<&Vec<(DefinitionId, DefinitionId)>>,
+) {
+    if let Definition::Fun(ref fun) = bc.definitions[definition_id] {
+        //Skip generic functions during codegen.  Instead, we'll codegen their instantiations
+        if definition_id != starting_fn_id {
+            match fun.extern_name {
+                Some(ref ex_name) => {
+                    cfile.codegen_raw(&format!(
+                        "{} {}(",
+                        &codegen_type(bc, fun.return_ty, instantiations),
+                        ex_name
+                    ));
+                }
+                None => {
+                    let header = format!(
+                        "{} fun_{}(",
+                        codegen_type(bc, fun.return_ty, instantiations),
+                        definition_id
+                    );
+                    cfile.codegen_raw(&header);
+                }
+            }
+
+            let mut first = true;
+            for param in &fun.params {
+                cfile.codegen_raw(&format!(
+                    "{}{} {}",
+                    if !first { ", " } else { "" },
+                    codegen_type(bc, param.ty, instantiations),
+                    param.name
+                ));
+                first = false;
+            }
+
+            cfile.codegen_raw(");\n");
+        }
+    } else if let Definition::Struct(_) = bc.definitions[definition_id] {
+        let struct_line = format!("struct struct_{};\n", definition_id);
+        cfile.codegen_raw(&struct_line);
+        let struct_init_line = format!(
+            "{} init_struct_{}();\n",
+            codegen_type(bc, definition_id, instantiations),
+            definition_id
+        );
+        cfile.codegen_raw(&struct_init_line);
+    } else if let Definition::InstantiatedFun(orig_id, ref instantiations) =
+        bc.definitions[definition_id]
+    {
+        if let Definition::Fun(ref fun) = bc.definitions[orig_id] {
+            let header = format!(
+                "{} fun_{}(",
+                codegen_type(bc, fun.return_ty, Some(instantiations)),
+                definition_id
+            );
+            cfile.codegen_raw(&header);
+            let mut first = true;
+            for param in &fun.params {
+                cfile.codegen_raw(&format!(
+                    "{}{} {}",
+                    if !first { ", " } else { "" },
+                    codegen_type(bc, param.ty, Some(instantiations)),
+                    param.name
+                ));
+                first = false;
+            }
+
+            cfile.codegen_raw(");\n");
+        }
+    }
+}
+
+fn codegen_c_body(
+    cfile: &mut CFile,
+    bc: &BytecodeEngine,
+    definition_id: DefinitionId,
+    starting_fn_id: DefinitionId,
+    instantiations: Option<&Vec<(DefinitionId, DefinitionId)>>,
+) {
+    // Only codegen definitions that we know, others may be types (and not have an associated codegen)
+    if let Definition::Fun(ref fun) = bc.definitions[definition_id] {
+        //Skip generic functions during codegen.  Instead, we'll codegen their instantiations
+        if fun.extern_name.is_none() {
+            if definition_id == starting_fn_id {
+                codegen_fn(cfile, bc, "main", fun, None);
+            } else {
+                codegen_fn(
+                    cfile,
+                    bc,
+                    &format!("fun_{}", definition_id),
+                    fun,
+                    instantiations,
+                );
+            }
+        }
+    } else if let Definition::Struct(ref st) = bc.definitions[definition_id] {
+        if st.fields.len() == 0 {
+            cfile.codegen_raw(&format!(
+                "struct struct_{} {{int dummy;}};\n",
+                definition_id
+            ));
+        } else {
+            cfile.codegen_raw(&format!("struct struct_{} {{", definition_id));
+            for field in &st.fields {
+                cfile.codegen_raw(&format!(
+                    "{} {};\n",
+                    codegen_type(bc, field.1, instantiations),
+                    field.0
+                ));
+            }
+            cfile.codegen_raw("};\n");
+        };
+
+        cfile.codegen_raw(&format!(
+            "{} init_struct_{}(",
+            codegen_type(bc, definition_id, instantiations),
+            definition_id
+        ));
+
+        let mut first = true;
+
+        for field in &st.fields {
+            cfile.codegen_raw(&format!(
+                "{}{} {}",
+                if !first { ", " } else { "" },
+                codegen_type(bc, field.1, instantiations),
+                field.0
+            ));
+            first = false;
+        }
+
+        cfile.codegen_raw(") {\n");
+
+        cfile.codegen_raw(&format!(
+            "{} temp = ",
+            codegen_type(bc, definition_id, instantiations)
+        ));
+        cfile.codegen_raw("{");
+        let mut first = true;
+        if st.fields.len() > 0 {
+            for field in &st.fields {
+                cfile.codegen_raw(&format!("{}{}", if !first { ", " } else { "" }, field.0,));
+                first = false;
+            }
+        } else {
+            cfile.codegen_raw("0");
+        }
+        cfile.codegen_raw("};\n");
+        cfile.codegen_raw("return temp;\n");
+        cfile.codegen_raw("}\n");
+    } else if let Definition::InstantiatedFun(orig_id, ref instantiations) =
+        bc.definitions[definition_id]
+    {
+        if let Definition::Fun(ref fun) = bc.definitions[orig_id] {
+            codegen_fn(
+                cfile,
+                bc,
+                &format!("fun_{}", definition_id),
+                fun,
+                Some(instantiations),
+            );
+        }
+    }
+}
+
 fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
     let mut cfile = CFile::new();
 
@@ -356,110 +577,25 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     //TODO: FIXME: just make two separate strings and concat them rather than iterating twice
     for definition_id in 0..bc.definitions.len() {
+        // Skip generic functions during codegen, instead we'll output the instantitions when
+        // we get to them
         if let Definition::Fun(ref fun) = bc.definitions[definition_id] {
-            if definition_id != starting_fn_id {
-                match fun.extern_name {
-                    Some(ref ex_name) => {
-                        cfile.codegen_raw(&format!(
-                            "{} {}(",
-                            &codegen_type(bc, fun.return_ty),
-                            ex_name
-                        ));
-                    }
-                    None => {
-                        let header = format!(
-                            "{} fun_{}(\n",
-                            codegen_type(bc, fun.return_ty),
-                            definition_id
-                        );
-                        cfile.codegen_raw(&header);
-                    }
-                }
-
-                let mut first = true;
-                for param in &fun.params {
-                    cfile.codegen_raw(&format!(
-                        "{}{} {}",
-                        if !first { ", " } else { "" },
-                        codegen_type(bc, param.ty),
-                        param.name
-                    ));
-                    first = false;
-                }
-
-                cfile.codegen_raw(");\n");
+            if fun.is_generic() {
+                continue;
             }
-        } else if let Definition::Struct(_) = bc.definitions[definition_id] {
-            let struct_line = format!("struct struct_{};\n", definition_id);
-            cfile.codegen_raw(&struct_line);
-            let struct_init_line = format!(
-                "{} init_struct_{}();\n",
-                codegen_type(bc, definition_id),
-                definition_id
-            );
-            cfile.codegen_raw(&struct_init_line);
         }
+        codegen_c_prototype(&mut cfile, bc, definition_id, starting_fn_id, None);
     }
 
     for definition_id in 0..bc.definitions.len() {
-        // Only codegen definitions that we know, others may be types (and not have an associated codegen)
+        // Skip generic functions during codegen, instead we'll output the instantitions when
+        // we get to them
         if let Definition::Fun(ref fun) = bc.definitions[definition_id] {
-            if fun.extern_name.is_none() {
-                if definition_id == starting_fn_id {
-                    codegen_fn(&mut cfile, bc, "main", fun);
-                } else {
-                    codegen_fn(&mut cfile, bc, &format!("fun_{}", definition_id), fun);
-                }
+            if fun.is_generic() {
+                continue;
             }
-        } else if let Definition::Struct(ref st) = bc.definitions[definition_id] {
-            if st.fields.len() == 0 {
-                cfile.codegen_raw(&format!(
-                    "struct struct_{} {{int dummy;}};\n",
-                    definition_id
-                ));
-            } else {
-                cfile.codegen_raw(&format!("struct struct_{} {{", definition_id));
-                for field in &st.fields {
-                    cfile.codegen_raw(&format!("{} {};\n", codegen_type(bc, field.1), field.0));
-                }
-                cfile.codegen_raw("};\n");
-            };
-
-            cfile.codegen_raw(&format!(
-                "{} init_struct_{}(",
-                codegen_type(bc, definition_id),
-                definition_id
-            ));
-
-            let mut first = true;
-
-            for field in &st.fields {
-                cfile.codegen_raw(&format!(
-                    "{}{} {}",
-                    if !first { ", " } else { "" },
-                    codegen_type(bc, field.1),
-                    field.0
-                ));
-                first = false;
-            }
-
-            cfile.codegen_raw(") {\n");
-
-            cfile.codegen_raw(&format!("{} temp = ", codegen_type(bc, definition_id)));
-            cfile.codegen_raw("{");
-            let mut first = true;
-            if st.fields.len() > 0 {
-                for field in &st.fields {
-                    cfile.codegen_raw(&format!("{}{}", if !first { ", " } else { "" }, field.0,));
-                    first = false;
-                }
-            } else {
-                cfile.codegen_raw("0");
-            }
-            cfile.codegen_raw("};\n");
-            cfile.codegen_raw("return temp;\n");
-            cfile.codegen_raw("}\n");
         }
+        codegen_c_body(&mut cfile, bc, definition_id, starting_fn_id, None)
     }
 
     cfile.output_src

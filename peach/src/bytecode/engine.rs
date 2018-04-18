@@ -108,11 +108,18 @@ impl VarStack {
 
 #[derive(Debug, Clone)]
 pub struct Fun {
+    pub ty_params: Vec<DefinitionId>,
     pub params: Vec<Param>,
     pub return_ty: DefinitionId,
     pub vars: Vec<VarDecl>,
     pub bytecode: Vec<Bytecode>,
     pub extern_name: Option<String>,
+}
+
+impl Fun {
+    pub fn is_generic(&self) -> bool {
+        self.ty_params.len() > 0
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -159,7 +166,9 @@ pub enum Definition {
     Fun(Fun),
     Mod(Mod),
     Struct(Struct),
+    InstantiatedFun(DefinitionId, Vec<(DefinitionId, DefinitionId)>),
     Builtin,
+    TypeVariable,
 }
 
 pub struct Scope {
@@ -358,6 +367,7 @@ impl BytecodeEngine {
                         self.definitions.push(Definition::Fun(Fun {
                             bytecode: vec![],
                             params,
+                            ty_params: vec![],
                             return_ty,
                             vars: vec![],
                             extern_name: Some(fn_name.clone()),
@@ -558,6 +568,8 @@ impl BytecodeEngine {
                 Definition::Struct(_) => Some(definition_id),
                 Definition::Mod(_) => Some(definition_id),
                 Definition::Builtin => Some(definition_id),
+                Definition::TypeVariable => Some(definition_id),
+                Definition::InstantiatedFun(_, _) => Some(definition_id),
             }
         } else {
             None
@@ -722,6 +734,61 @@ impl BytecodeEngine {
                 }
             }
             Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub fn instantiate_generic_fn(
+        &mut self,
+        target_fn_id: DefinitionId,
+        scope_id: ScopeId,
+        arg_tys: &Vec<DefinitionId>,
+    ) -> (DefinitionId, DefinitionId) {
+        // Simple unification
+
+        if let Definition::Fun(ref fun) = self.definitions[target_fn_id] {
+            //let mut instantiated_param_tys = vec![];
+            let mut unification = vec![];
+            let mut return_ty = fun.return_ty;
+            let mut instance_name = "inst".to_string();
+
+            let mut arg_iter = arg_tys.iter();
+            for param in &fun.params {
+                let arg = arg_iter.next();
+                match self.definitions[param.ty] {
+                    Definition::TypeVariable => match arg {
+                        Some(arg) => {
+                            unification.push((param.ty, *arg));
+                            instance_name += &format!("${}", arg);
+                            if return_ty == param.ty {
+                                return_ty = *arg;
+                            }
+                        }
+                        None => {
+                            unimplemented!("Mismatched params and args");
+                        }
+                    },
+                    _ => {}
+                }
+            }
+            instance_name += &format!("%{}", return_ty);
+
+            match self.scopes[scope_id].definitions.get(&instance_name) {
+                Some(def_id) => (*def_id, return_ty),
+                None => {
+                    self.definitions
+                        .push(Definition::InstantiatedFun(target_fn_id, unification));
+
+                    let instance_definition_id = self.definitions.len() - 1;
+
+                    self.scopes[scope_id]
+                        .definitions
+                        .insert(instance_name, instance_definition_id);
+
+                    (instance_definition_id, return_ty)
+                }
+            }
+        } else {
+            unimplemented!("Instantiation of non-function")
         }
     }
 }

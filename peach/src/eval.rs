@@ -352,6 +352,13 @@ impl EvalEngine {
                             offset += 1;
                         }
                         self.value_stack.push(Value::Object(hash))
+                    } else if let Definition::InstantiatedFun(orig_id, _) =
+                        bc.definitions[*definition_id]
+                    {
+                        if let Definition::Fun(ref target_fun) = bc.definitions[orig_id] {
+                            let result = self.eval_fn_bytecode(bc, target_fun);
+                            self.value_stack.push(result);
+                        }
                     } else {
                         unimplemented!("Eval of unprocessed function");
                     }

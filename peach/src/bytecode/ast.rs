@@ -3,8 +3,8 @@ use bytecode::engine::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, 
 use bytecode::typecheck::builtin_type;
 use proc_macro2::TokenStream;
 use std::ptr;
-use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, Lit, Member, Pat, ReturnType, Stmt,
-          Type, UnOp};
+use syn::{self, BinOp, Block, Expr, FnArg, GenericParam, IntSuffix, Item, Lit, Member, Pat,
+          ReturnType, Stmt, Type, UnOp};
 
 impl BytecodeEngine {
     pub(crate) fn convert_fn_to_bytecode(
@@ -18,6 +18,20 @@ impl BytecodeEngine {
             Definition::Fun(fun) => fun,
             Definition::LazyFn(item_fn) => {
                 let mut bytecode = Vec::new();
+
+                let mut ty_params = vec![];
+                for generic_param in item_fn.decl.generics.params {
+                    match generic_param {
+                        GenericParam::Type(type_param) => {
+                            self.definitions.push(Definition::TypeVariable);
+                            self.scopes[scope_id]
+                                .definitions
+                                .insert(type_param.ident.to_string(), self.definitions.len() - 1);
+                            ty_params.push(self.definitions.len() - 1);
+                        }
+                        _ => {}
+                    }
+                }
 
                 let return_ty = match &item_fn.decl.output {
                     ReturnType::Default => builtin_type::VOID,
@@ -74,6 +88,7 @@ impl BytecodeEngine {
                 }
 
                 Fun {
+                    ty_params,
                     params,
                     return_ty,
                     vars: var_stack.vars,
@@ -530,7 +545,11 @@ impl BytecodeEngine {
                         bytecode.push(Bytecode::Add);
                         self.tighter_of_types(lhs_type, rhs_type)
                     } else {
-                        unimplemented!("Can't add values of {:?} and {:?}", lhs_type, rhs_type);
+                        unimplemented!(
+                            "Can't add values of {:?} and {:?}",
+                            self.printable_name(lhs_type),
+                            self.printable_name(rhs_type)
+                        );
                     }
                 }
                 BinOp::Sub(_a) => {
@@ -734,21 +753,47 @@ impl BytecodeEngine {
                         let definition_id = definition_id.unwrap();
 
                         if let Definition::Fun(ref target_fn) = self.definitions[definition_id] {
-                            let return_definition_id = target_fn.return_ty;
+                            if target_fn.ty_params.len() > 0 {
+                                let mut arg_tys: Vec<DefinitionId> = vec![];
 
-                            for arg in &ec.args {
-                                self.convert_expr_to_bytecode(
-                                    arg,
-                                    expected_return_type,
-                                    bytecode,
+                                for arg in &ec.args {
+                                    let arg_ty = self.convert_expr_to_bytecode(
+                                        arg,
+                                        expected_return_type,
+                                        bytecode,
+                                        current_scope_id,
+                                        var_stack,
+                                    );
+                                    arg_tys.push(arg_ty);
+                                }
+
+                                //TODO: FIXME: probably not the best scope id for this
+                                let (instance_definition_id, return_ty) = self.instantiate_generic_fn(
+                                    definition_id,
                                     current_scope_id,
-                                    var_stack,
+                                    &arg_tys,
                                 );
+
+                                bytecode.push(Bytecode::Call(instance_definition_id));
+
+                                return_ty
+                            } else {
+                                let return_ty = target_fn.return_ty;
+
+                                for arg in &ec.args {
+                                    self.convert_expr_to_bytecode(
+                                        arg,
+                                        expected_return_type,
+                                        bytecode,
+                                        current_scope_id,
+                                        var_stack,
+                                    );
+                                }
+
+                                bytecode.push(Bytecode::Call(definition_id));
+
+                                return_ty
                             }
-
-                            bytecode.push(Bytecode::Call(definition_id));
-
-                            return_definition_id
                         } else {
                             unimplemented!(
                                 "Processed function {:?} did not process correctly",
@@ -825,6 +870,8 @@ impl BytecodeEngine {
                 _ => {
                     if let Some(definition_id) = self.process_path(&tp.path, current_scope_id) {
                         if let Definition::Struct(_) = self.definitions[definition_id] {
+                            definition_id
+                        } else if let Definition::TypeVariable = self.definitions[definition_id] {
                             definition_id
                         } else {
                             unimplemented!("Could not find processed struct for type");
