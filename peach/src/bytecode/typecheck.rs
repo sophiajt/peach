@@ -15,12 +15,8 @@ pub mod builtin_type {
 }
 
 impl BytecodeEngine {
-    pub fn is_custom_type(&self, type_id: DefinitionId) -> bool {
-        type_id > builtin_type::ERROR
-    }
-
-    pub fn printable_name(&self, type_id: DefinitionId) -> String {
-        match type_id {
+    pub fn printable_name(&self, ty: DefinitionId) -> String {
+        match ty {
             builtin_type::UNKNOWN => "{unknown}".into(),
             builtin_type::UNKNOWN_INT => "{unknown int}".into(),
             builtin_type::VOID => "void".into(),
@@ -30,7 +26,7 @@ impl BytecodeEngine {
             builtin_type::I32 => "i32".into(),
             builtin_type::BOOL => "bool".into(),
             builtin_type::ERROR => "{error}".into(),
-            _ => format!("{{custom type: {}}}", type_id),
+            _ => format!("{{custom type: {}}}", ty),
         }
     }
 

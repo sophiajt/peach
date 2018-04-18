@@ -354,10 +354,8 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
 
     let starting_fn_id = bc.scopes[0].definitions["main"];
 
-    let starting_definition_id = builtin_type::ERROR + 1; //Start after the built-in types
-
     //TODO: FIXME: just make two separate strings and concat them rather than iterating twice
-    for definition_id in starting_definition_id..bc.definitions.len() {
+    for definition_id in 0..bc.definitions.len() {
         if let Definition::Fun(ref fun) = bc.definitions[definition_id] {
             if definition_id != starting_fn_id {
                 match fun.extern_name {
@@ -403,7 +401,7 @@ fn codegen_c_from_bytecode(bc: &BytecodeEngine) -> String {
         }
     }
 
-    for definition_id in starting_definition_id..bc.definitions.len() {
+    for definition_id in 0..bc.definitions.len() {
         // Only codegen definitions that we know, others may be types (and not have an associated codegen)
         if let Definition::Fun(ref fun) = bc.definitions[definition_id] {
             if fun.extern_name.is_none() {

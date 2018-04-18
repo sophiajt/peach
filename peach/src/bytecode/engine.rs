@@ -6,6 +6,8 @@ use syn::{self, Block, FnArg, FnDecl, ForeignItem, ImplItem, Item, ItemImpl, Ite
           Pat, ReturnType};
 
 pub(crate) type ScopeId = usize;
+
+/// A unique identifier (unique for the duration of the engine) that identifies a definition (which may be a function, struct, type, or other)
 pub type DefinitionId = usize;
 
 type VarId = usize;
@@ -157,6 +159,7 @@ pub enum Definition {
     Fun(Fun),
     Mod(Mod),
     Struct(Struct),
+    Builtin,
 }
 
 pub struct Scope {
@@ -195,7 +198,6 @@ pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) definitions: Vec<Definition>,
     pub(crate) project_root: Option<::std::path::PathBuf>,
-    //pub(crate) types: Vec<TypeInfo>,
 }
 
 impl BytecodeEngine {
@@ -203,7 +205,7 @@ impl BytecodeEngine {
         let mut definitions = vec![];
 
         for _ in 0..(builtin_type::ERROR + 1) {
-            definitions.push(Definition::Struct(Struct::new(vec![])));
+            definitions.push(Definition::Builtin);
         }
 
         BytecodeEngine {
@@ -555,6 +557,7 @@ impl BytecodeEngine {
                 Definition::Fun(_) => Some(definition_id),
                 Definition::Struct(_) => Some(definition_id),
                 Definition::Mod(_) => Some(definition_id),
+                Definition::Builtin => Some(definition_id),
             }
         } else {
             None
