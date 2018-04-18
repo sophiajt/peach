@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use bytecode::typecheck::{builtin_type, TypeId, TypeInfo};
+use bytecode::typecheck::builtin_type;
 use std::os::raw::c_void;
 use syn::{self, Block, FnArg, FnDecl, ForeignItem, ImplItem, Item, ItemImpl, ItemMod, ItemStruct,
           Pat, ReturnType};
 
 pub(crate) type ScopeId = usize;
-pub(crate) type DefinitionId = usize;
+pub type DefinitionId = usize;
 
 type VarId = usize;
 type Offset = usize;
@@ -22,7 +22,7 @@ pub enum Bytecode {
     PushUnknownInt(i32),
     PushBool(bool),
     PushRawPtr(*const c_void),
-    As(TypeId),
+    As(DefinitionId),
     Add,
     Sub,
     Mul,
@@ -35,13 +35,13 @@ pub enum Bytecode {
     Var(VarId),
     Assign,
     Call(DefinitionId),
-    If(Offset, TypeId), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
-    Else(Offset, TypeId), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
-    EndIf(TypeId),        //includes the type of the result, if this is an expression
+    If(Offset, DefinitionId), // Offset is number of bytecodes to jump forward if false.  Also includes the type of the result, if this is an expression
+    Else(Offset, DefinitionId), // Offset is number of bytecodes to skip (aka jump forward). Also includes the type of the result, if this is an expression
+    EndIf(DefinitionId),        //includes the type of the result, if this is an expression
     BeginWhile,
     WhileCond(Offset), // Offset is number of bytecodes to jump forward if false
     EndWhile(Offset),  // Offset is number of bytecodes to jump backward to return to start of while
-    DebugPrint(TypeId),
+    DebugPrint(DefinitionId),
 
     //lvalue
     LValueVar(VarId),
@@ -52,27 +52,23 @@ pub enum Bytecode {
 pub struct Param {
     pub name: String,
     pub(crate) var_id: VarId,
-    pub type_id: TypeId,
+    pub ty: DefinitionId,
 }
 impl Param {
-    pub fn new(name: String, var_id: VarId, type_id: TypeId) -> Param {
-        Param {
-            name,
-            var_id,
-            type_id,
-        }
+    pub fn new(name: String, var_id: VarId, ty: DefinitionId) -> Param {
+        Param { name, var_id, ty }
     }
 }
 
 #[derive(Clone, Debug, Ord, Eq, PartialOrd, PartialEq)]
 pub struct VarDecl {
     pub ident: String,
-    pub type_id: TypeId,
+    pub ty: DefinitionId,
 }
 
 impl VarDecl {
-    fn new(ident: String, type_id: TypeId) -> VarDecl {
-        VarDecl { ident, type_id }
+    fn new(ident: String, ty: DefinitionId) -> VarDecl {
+        VarDecl { ident, ty }
     }
 }
 
@@ -90,8 +86,8 @@ impl VarStack {
         }
     }
 
-    pub(crate) fn add_var(&mut self, ident: String, type_id: TypeId) -> usize {
-        self.vars.push(VarDecl::new(ident, type_id));
+    pub(crate) fn add_var(&mut self, ident: String, definition_id: DefinitionId) -> usize {
+        self.vars.push(VarDecl::new(ident, definition_id));
         let pos = self.vars.len() - 1;
         self.var_stack.push(pos);
         pos
@@ -111,7 +107,7 @@ impl VarStack {
 #[derive(Debug, Clone)]
 pub struct Fun {
     pub params: Vec<Param>,
-    pub return_type_id: TypeId,
+    pub return_ty: DefinitionId,
     pub vars: Vec<VarDecl>,
     pub bytecode: Vec<Bytecode>,
     pub extern_name: Option<String>,
@@ -129,11 +125,11 @@ impl Mod {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub type_id: TypeId,
+    pub fields: Vec<(String, DefinitionId)>,
 }
 impl Struct {
-    fn new(type_id: TypeId) -> Struct {
-        Struct { type_id }
+    fn new(fields: Vec<(String, DefinitionId)>) -> Struct {
+        Struct { fields }
     }
 }
 
@@ -150,24 +146,17 @@ impl LazyFn {
 }
 
 #[derive(Clone, Debug)]
-pub enum Lazy {
-    ItemFn(LazyFn),
-    ItemMod(ItemMod),
-    ItemStruct(ItemStruct),
-    ItemImpl(ItemImpl),
-}
+pub enum Definition {
+    //Lazy (unprocessed) definitions
+    LazyFn(LazyFn),
+    LazyMod(ItemMod),
+    LazyStruct(ItemStruct),
+    LazyImpl(ItemImpl),
 
-#[derive(Clone, Debug)]
-pub enum Processed {
+    //Processed definitions
     Fun(Fun),
     Mod(Mod),
     Struct(Struct),
-}
-
-#[derive(Clone, Debug)]
-pub enum Definition {
-    Lazy(Lazy),
-    Processed(Processed),
 }
 
 pub struct Scope {
@@ -206,15 +195,15 @@ pub struct BytecodeEngine {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) definitions: Vec<Definition>,
     pub(crate) project_root: Option<::std::path::PathBuf>,
-    pub(crate) types: Vec<TypeInfo>,
+    //pub(crate) types: Vec<TypeInfo>,
 }
 
 impl BytecodeEngine {
     pub fn new() -> BytecodeEngine {
-        let mut types = vec![];
+        let mut definitions = vec![];
 
         for _ in 0..(builtin_type::ERROR + 1) {
-            types.push(TypeInfo::Builtin);
+            definitions.push(Definition::Struct(Struct::new(vec![])));
         }
 
         BytecodeEngine {
@@ -223,9 +212,8 @@ impl BytecodeEngine {
                 is_mod: true,
                 definitions: HashMap::new(),
             }],
-            definitions: vec![],
+            definitions,
             project_root: None,
-            types,
         }
     }
 
@@ -264,7 +252,7 @@ impl BytecodeEngine {
         if let Some((defn_id, _)) = self.get_defn(defn_name, scope_id) {
             let defn = &self.definitions[defn_id];
 
-            if let Definition::Processed(Processed::Fun(ref p)) = defn {
+            if let Definition::Fun(ref p) = defn {
                 p
             } else {
                 unimplemented!("Function {:?} needs to be precomputed", defn)
@@ -318,11 +306,10 @@ impl BytecodeEngine {
             Item::Fn(item_fn) => {
                 // Adds a function to be processed lazily
                 let fn_name = item_fn.ident.to_string();
-                self.definitions
-                    .push(Definition::Lazy(Lazy::ItemFn(LazyFn::new(
-                        *item_fn.decl,
-                        *item_fn.block,
-                    ))));
+                self.definitions.push(Definition::LazyFn(LazyFn::new(
+                    *item_fn.decl,
+                    *item_fn.block,
+                )));
                 self.scopes[current_scope_id]
                     .definitions
                     .insert(fn_name, self.definitions.len() - 1);
@@ -332,7 +319,7 @@ impl BytecodeEngine {
                     ForeignItem::Fn(fun) => {
                         let fn_name = fun.ident.to_string();
 
-                        let return_type_id = match &fun.decl.output {
+                        let return_ty = match &fun.decl.output {
                             ReturnType::Default => builtin_type::VOID,
                             ReturnType::Type(_, ref box_ty) => {
                                 self.resolve_type(box_ty, current_scope_id)
@@ -349,10 +336,10 @@ impl BytecodeEngine {
                                     match capture.pat {
                                         Pat::Ident(ref pi) => {
                                             let ident = pi.ident.to_string();
-                                            let type_id =
+                                            let ty =
                                                 self.resolve_type(&capture.ty, current_scope_id);
-                                            let var_id = var_stack.add_var(ident.clone(), type_id);
-                                            params.push(Param::new(ident, var_id, type_id));
+                                            let var_id = var_stack.add_var(ident.clone(), ty);
+                                            params.push(Param::new(ident, var_id, ty));
                                         }
                                         _ => unimplemented!(
                                             "Unsupported pattern type in function parameter"
@@ -366,14 +353,13 @@ impl BytecodeEngine {
                             }
                         }
 
-                        self.definitions
-                            .push(Definition::Processed(Processed::Fun(Fun {
-                                bytecode: vec![],
-                                params,
-                                return_type_id,
-                                vars: vec![],
-                                extern_name: Some(fn_name.clone()),
-                            })));
+                        self.definitions.push(Definition::Fun(Fun {
+                            bytecode: vec![],
+                            params,
+                            return_ty,
+                            vars: vec![],
+                            extern_name: Some(fn_name.clone()),
+                        }));
                         self.scopes[current_scope_id]
                             .definitions
                             .insert(fn_name, self.definitions.len() - 1);
@@ -414,9 +400,7 @@ impl BytecodeEngine {
                     // This allows us to make its contents lazily available
                     // Part of the reason we do it this way is that we don't have an ItemMod
                     self.definitions
-                        .push(Definition::Processed(Processed::Mod(Mod::new(
-                            mod_scope_id,
-                        ))));
+                        .push(Definition::Mod(Mod::new(mod_scope_id)));
 
                     self.scopes[current_scope_id]
                         .definitions
@@ -428,8 +412,7 @@ impl BytecodeEngine {
                 } else {
                     // Add module to be processed lazily
                     let mod_name = item_mod.ident.to_string();
-                    self.definitions
-                        .push(Definition::Lazy(Lazy::ItemMod(item_mod)));
+                    self.definitions.push(Definition::LazyMod(item_mod));
                     self.scopes[current_scope_id]
                         .definitions
                         .insert(mod_name, self.definitions.len() - 1);
@@ -456,8 +439,7 @@ impl BytecodeEngine {
             Item::Struct(item_struct) => {
                 let ident = item_struct.ident.to_string();
 
-                self.definitions
-                    .push(Definition::Lazy(Lazy::ItemStruct(item_struct)));
+                self.definitions.push(Definition::LazyStruct(item_struct));
                 self.scopes[current_scope_id]
                     .definitions
                     .insert(ident, self.definitions.len() - 1);
@@ -473,7 +455,7 @@ impl BytecodeEngine {
     pub fn process_fn(&mut self, fn_name: &str, scope_id: ScopeId) -> DefinitionId {
         if let Some((definition_id, found_scope_id)) = self.get_defn(fn_name, scope_id) {
             let fun = self.convert_fn_to_bytecode(definition_id, found_scope_id);
-            self.definitions[definition_id] = Definition::Processed(Processed::Fun(fun));
+            self.definitions[definition_id] = Definition::Fun(fun);
 
             definition_id
         } else {
@@ -483,15 +465,14 @@ impl BytecodeEngine {
 
     fn process_struct(&mut self, struct_name: &str, scope_id: ScopeId) -> DefinitionId {
         if let Some((definition_id, _found_scope_id)) = self.get_defn(struct_name, scope_id) {
-            let fields_in = if let Definition::Lazy(Lazy::ItemStruct(ref item_struct)) =
-                self.definitions[definition_id]
-            {
-                item_struct.fields.clone()
-            } else {
-                unimplemented!("Could not process struct fields");
-            };
+            let fields_in =
+                if let Definition::LazyStruct(ref item_struct) = self.definitions[definition_id] {
+                    item_struct.fields.clone()
+                } else {
+                    unimplemented!("Could not process struct fields");
+                };
 
-            let mut fields: Vec<(String, TypeId)> = vec![];
+            let mut fields: Vec<(String, DefinitionId)> = vec![];
             for iter in &fields_in {
                 let field_ty = self.resolve_type(&iter.ty, scope_id);
                 fields.push((iter.ident.unwrap().to_string(), field_ty));
@@ -499,9 +480,8 @@ impl BytecodeEngine {
 
             fields.sort();
 
-            let type_id = self.new_struct(fields);
-            let s = Struct::new(type_id);
-            self.definitions[definition_id] = Definition::Processed(Processed::Struct(s));
+            let s = Struct::new(fields);
+            self.definitions[definition_id] = Definition::Struct(s);
 
             definition_id
         } else {
@@ -511,7 +491,7 @@ impl BytecodeEngine {
 
     fn process_mod(&mut self, mod_name: &str, scope_id: ScopeId) -> DefinitionId {
         if let Some((definition_id, current_scope_id)) = self.get_defn(mod_name, scope_id) {
-            if let Definition::Lazy(Lazy::ItemMod(ref item_mod)) = self.definitions[definition_id] {
+            if let Definition::LazyMod(ref item_mod) = self.definitions[definition_id] {
                 self.scopes.push(Scope::new(Some(current_scope_id), true));
                 let mod_scope_id = self.scopes.len() - 1;
 
@@ -523,10 +503,8 @@ impl BytecodeEngine {
                     None => {}
                 }
 
-                self.definitions[definition_id] =
-                    Definition::Processed(Processed::Mod(Mod::new(mod_scope_id)));
-            } else if let Definition::Processed(Processed::Mod(_)) = self.definitions[definition_id]
-            {
+                self.definitions[definition_id] = Definition::Mod(Mod::new(mod_scope_id));
+            } else if let Definition::Mod(_) = self.definitions[definition_id] {
 
             } else {
                 unimplemented!("Processing definition that is not a lazy module");
@@ -539,9 +517,7 @@ impl BytecodeEngine {
 
     fn process_impl(&mut self, impl_name: &str, scope_id: ScopeId) -> DefinitionId {
         if let Some((definition_id, current_scope_id)) = self.get_defn(impl_name, scope_id) {
-            if let Definition::Lazy(Lazy::ItemImpl(item_impl)) =
-                self.definitions[definition_id].clone()
-            {
+            if let Definition::LazyImpl(item_impl) = self.definitions[definition_id].clone() {
                 self.scopes.push(Scope::new(Some(current_scope_id), true));
                 let impl_scope_id = self.scopes.len() - 1;
                 for item in item_impl.items {
@@ -549,11 +525,10 @@ impl BytecodeEngine {
                         ImplItem::Method(impl_item_method) => {
                             // Adds a function to be processed lazily
                             let fn_name = impl_item_method.sig.ident.to_string();
-                            self.definitions
-                                .push(Definition::Lazy(Lazy::ItemFn(LazyFn::new(
-                                    impl_item_method.sig.decl,
-                                    impl_item_method.block,
-                                ))));
+                            self.definitions.push(Definition::LazyFn(LazyFn::new(
+                                impl_item_method.sig.decl,
+                                impl_item_method.block,
+                            )));
                             self.scopes[impl_scope_id]
                                 .definitions
                                 .insert(fn_name, self.definitions.len() - 1);
@@ -572,16 +547,14 @@ impl BytecodeEngine {
 
     fn process_defn(&mut self, name: &str, scope_id: ScopeId) -> Option<DefinitionId> {
         if let Some((definition_id, scope_id)) = self.get_defn(name, scope_id) {
-            if let Definition::Lazy(ref lazy) = self.definitions[definition_id] {
-                let result = match lazy {
-                    Lazy::ItemFn(_) => self.process_fn(name, scope_id),
-                    Lazy::ItemMod(_) => self.process_mod(name, scope_id),
-                    Lazy::ItemStruct(_) => self.process_struct(name, scope_id),
-                    Lazy::ItemImpl(_) => self.process_impl(name, scope_id),
-                };
-                Some(result)
-            } else {
-                Some(definition_id)
+            match self.definitions[definition_id] {
+                Definition::LazyFn(_) => Some(self.process_fn(name, scope_id)),
+                Definition::LazyMod(_) => Some(self.process_mod(name, scope_id)),
+                Definition::LazyStruct(_) => Some(self.process_struct(name, scope_id)),
+                Definition::LazyImpl(_) => Some(self.process_impl(name, scope_id)),
+                Definition::Fun(_) => Some(definition_id),
+                Definition::Struct(_) => Some(definition_id),
+                Definition::Mod(_) => Some(definition_id),
             }
         } else {
             None
@@ -611,9 +584,7 @@ impl BytecodeEngine {
         for current_segment in 0..(num_segments - 1) {
             let ident = path.segments[current_segment].ident.as_ref();
             let definition_id = self.process_mod(ident, mod_scope_id);
-            if let Definition::Processed(Processed::Mod(ref module)) =
-                self.definitions[definition_id]
-            {
+            if let Definition::Mod(ref module) = self.definitions[definition_id] {
                 mod_scope_id = module.scope_id;
             } else {
                 unimplemented!("Failure to process module");
@@ -651,9 +622,7 @@ impl BytecodeEngine {
             }
             syn::UseTree::Path(ref use_path) => {
                 let definition_id = self.process_mod(use_path.ident.as_ref(), current_scope_id);
-                if let Definition::Processed(Processed::Mod(ref module)) =
-                    self.definitions[definition_id]
-                {
+                if let Definition::Mod(ref module) = self.definitions[definition_id] {
                     self.process_use_tree(&*use_path.tree, original_scope_id, module.scope_id);
                 } else {
                     unimplemented!("Expected module in use path");
@@ -706,7 +675,7 @@ impl BytecodeEngine {
         expr_str: &str,
         bytecode: &mut Vec<Bytecode>,
         var_stack: &mut VarStack,
-    ) -> Result<TypeId, String> {
+    ) -> Result<DefinitionId, String> {
         match syn::parse_str::<syn::Expr>(expr_str) {
             Ok(expr) => {
                 Ok(self.convert_expr_to_bytecode(

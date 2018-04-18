@@ -1,6 +1,6 @@
-use bytecode::engine::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Lazy, Param,
-                       Processed, Scope, ScopeId, VarStack};
-use bytecode::typecheck::{builtin_type, TypeId, TypeInfo};
+use bytecode::engine::{Bytecode, BytecodeEngine, Definition, DefinitionId, Fun, Param, Scope,
+                       ScopeId, VarStack};
+use bytecode::typecheck::builtin_type;
 use proc_macro2::TokenStream;
 use std::ptr;
 use syn::{self, BinOp, Block, Expr, FnArg, IntSuffix, Item, Lit, Member, Pat, ReturnType, Stmt,
@@ -15,11 +15,11 @@ impl BytecodeEngine {
         let defn_state = self.definitions[definition_id].clone();
 
         match defn_state {
-            Definition::Processed(Processed::Fun(fun)) => fun,
-            Definition::Lazy(Lazy::ItemFn(item_fn)) => {
+            Definition::Fun(fun) => fun,
+            Definition::LazyFn(item_fn) => {
                 let mut bytecode = Vec::new();
 
-                let return_type_id = match &item_fn.decl.output {
+                let return_ty = match &item_fn.decl.output {
                     ReturnType::Default => builtin_type::VOID,
                     ReturnType::Type(_, ref box_ty) => self.resolve_type(box_ty, scope_id),
                 };
@@ -34,9 +34,9 @@ impl BytecodeEngine {
                             match capture.pat {
                                 Pat::Ident(ref pi) => {
                                     let ident = pi.ident.to_string();
-                                    let type_id = self.resolve_type(&capture.ty, scope_id);
-                                    let var_id = var_stack.add_var(ident.clone(), type_id);
-                                    params.push(Param::new(ident, var_id, type_id));
+                                    let definition_id = self.resolve_type(&capture.ty, scope_id);
+                                    let var_id = var_stack.add_var(ident.clone(), definition_id);
+                                    params.push(Param::new(ident, var_id, definition_id));
                                 }
                                 _ => {
                                     unimplemented!("Unsupported pattern type in function parameter")
@@ -47,15 +47,15 @@ impl BytecodeEngine {
                     }
                 }
 
-                let block_type_id = self.convert_block_to_bytecode(
+                let block_ty = self.convert_block_to_bytecode(
                     &item_fn.block,
-                    return_type_id,
+                    return_ty,
                     &mut bytecode,
                     Some(scope_id),
                     &mut var_stack,
                 );
 
-                match block_type_id {
+                match block_ty {
                     builtin_type::VOID => bytecode.push(Bytecode::ReturnVoid),
                     _ => bytecode.push(Bytecode::ReturnLastStackValue),
                 }
@@ -63,11 +63,11 @@ impl BytecodeEngine {
                 match bytecode.last() {
                     Some(Bytecode::ReturnVoid) | Some(Bytecode::ReturnLastStackValue) => {}
                     _ => {
-                        if !self.assignment_compatible(return_type_id, block_type_id) {
+                        if !self.assignment_compatible(return_ty, block_ty) {
                             unimplemented!(
                                 "Mismatched return types: {} and {}",
-                                self.printable_name(block_type_id),
-                                self.printable_name(return_type_id),
+                                self.printable_name(block_ty),
+                                self.printable_name(return_ty),
                             );
                         }
                     }
@@ -75,7 +75,7 @@ impl BytecodeEngine {
 
                 Fun {
                     params,
-                    return_type_id,
+                    return_ty,
                     vars: var_stack.vars,
                     bytecode,
                     extern_name: None,
@@ -88,14 +88,14 @@ impl BytecodeEngine {
     pub(crate) fn convert_block_to_bytecode(
         &mut self,
         block: &Block,
-        expected_return_type: TypeId,
+        expected_return_type: DefinitionId,
         bytecode: &mut Vec<Bytecode>,
         parent: Option<ScopeId>,
         var_stack: &mut VarStack,
-    ) -> TypeId {
+    ) -> DefinitionId {
         //TODO: there may be more efficient ways to do this, but this will do for now
         let mut block_var_stack = var_stack.clone();
-        let mut return_type_id = builtin_type::VOID;
+        let mut return_definition_id = builtin_type::VOID;
         self.scopes.push(Scope::new(parent, false));
         let current_scope_id = self.scopes.len() - 1;
 
@@ -119,7 +119,7 @@ impl BytecodeEngine {
         }
 
         for stmt in &processed_block {
-            return_type_id = self.convert_stmt_to_bytecode(
+            return_definition_id = self.convert_stmt_to_bytecode(
                 stmt,
                 expected_return_type,
                 bytecode,
@@ -130,17 +130,17 @@ impl BytecodeEngine {
 
         var_stack.vars = block_var_stack.vars;
 
-        return_type_id
+        return_definition_id
     }
 
     pub fn convert_stmt_to_bytecode(
         &mut self,
         stmt: &Stmt,
-        expected_return_type: TypeId,
+        expected_return_type: DefinitionId,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
         var_stack: &mut VarStack,
-    ) -> TypeId {
+    ) -> DefinitionId {
         match stmt {
             Stmt::Semi(ref e, _) => {
                 self.convert_expr_to_bytecode(
@@ -222,11 +222,11 @@ impl BytecodeEngine {
     fn convert_lhs_expr_to_bytecode(
         &mut self,
         expr: &Expr,
-        expected_return_type: TypeId,
+        expected_return_type: DefinitionId,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
         var_stack: &mut VarStack,
-    ) -> TypeId {
+    ) -> DefinitionId {
         match expr {
             Expr::Path(ep) => {
                 let ident = ep.path.segments[0].ident.to_string();
@@ -239,10 +239,10 @@ impl BytecodeEngine {
                 let var = &mut var_stack.vars[var_id];
                 bytecode.push(Bytecode::LValueVar(var_id));
 
-                var.type_id
+                var.ty
             }
             Expr::Field(ef) => {
-                let type_id = self.convert_lhs_expr_to_bytecode(
+                let ty = self.convert_lhs_expr_to_bytecode(
                     &*ef.base,
                     expected_return_type,
                     bytecode,
@@ -250,7 +250,7 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                if let TypeInfo::Struct(ref st) = self.types[type_id] {
+                if let Definition::Struct(ref st) = self.definitions[ty] {
                     match ef.member {
                         Member::Named(ident) => {
                             bytecode.push(Bytecode::LValueDot(ident.to_string()));
@@ -273,11 +273,11 @@ impl BytecodeEngine {
     pub fn convert_expr_to_bytecode(
         &mut self,
         expr: &Expr,
-        expected_return_type: TypeId,
+        expected_return_type: DefinitionId,
         bytecode: &mut Vec<Bytecode>,
         current_scope_id: ScopeId,
         var_stack: &mut VarStack,
-    ) -> TypeId {
+    ) -> DefinitionId {
         match expr {
             Expr::Return(er) => {
                 let actual_return_type = match er.expr {
@@ -369,7 +369,7 @@ impl BytecodeEngine {
                     let tighter_type = self.tighter_of_types(lhs_type, rhs_type);
                     match bytecode.last() {
                         Some(Bytecode::LValueVar(var_id)) => {
-                            var_stack.vars[*var_id].type_id = tighter_type;
+                            var_stack.vars[*var_id].ty = tighter_type;
                         }
                         _ => {}
                     }
@@ -656,11 +656,9 @@ impl BytecodeEngine {
                     );
                 }
                 if let Some(definition_id) = self.process_path(&es.path, current_scope_id) {
-                    if let Definition::Processed(Processed::Struct(ref s)) =
-                        self.definitions[definition_id]
-                    {
+                    if let Definition::Struct(_) = self.definitions[definition_id] {
                         bytecode.push(Bytecode::Call(definition_id));
-                        s.type_id
+                        definition_id
                     } else {
                         unimplemented!("Unsupport definition type in struct call");
                     }
@@ -670,11 +668,9 @@ impl BytecodeEngine {
             }
             Expr::Path(ep) => {
                 if let Some(definition_id) = self.process_path(&ep.path, current_scope_id) {
-                    if let Definition::Processed(Processed::Struct(ref s)) =
-                        self.definitions[definition_id]
-                    {
+                    if let Definition::Struct(_) = self.definitions[definition_id] {
                         bytecode.push(Bytecode::Call(definition_id));
-                        s.type_id
+                        definition_id
                     } else {
                         unimplemented!("Unsupport definition type in struct call");
                     }
@@ -692,27 +688,27 @@ impl BytecodeEngine {
                         let var_id = var_id.unwrap();
                         let var = &var_stack.vars[var_id];
 
-                        if var.type_id == builtin_type::UNKNOWN {
+                        if var.ty == builtin_type::UNKNOWN {
                             unimplemented!("{} used before being given a value", ident);
                         }
 
                         bytecode.push(Bytecode::Var(var_id));
 
-                        var.type_id
+                        var.ty
                     }
                 }
             }
             Expr::Call(ec) => match *ec.func {
                 Expr::Path(ref ep) => {
                     if ep.path.segments.len() == 1 && ep.path.segments[0].ident == "__debug__" {
-                        let type_id = self.convert_expr_to_bytecode(
+                        let definition_id = self.convert_expr_to_bytecode(
                             &ec.args[0],
                             expected_return_type,
                             bytecode,
                             current_scope_id,
                             var_stack,
                         );
-                        bytecode.push(Bytecode::DebugPrint(type_id));
+                        bytecode.push(Bytecode::DebugPrint(definition_id));
                         builtin_type::VOID
                     } else {
                         // If we're in a single ident path, check values in scope
@@ -723,7 +719,7 @@ impl BytecodeEngine {
                                 //TODO: FIXME: in the future check this for lambda
                                 unimplemented!(
                                     "Can not call function on type {:?}",
-                                    var_stack.vars[var_id].type_id
+                                    var_stack.vars[var_id].ty
                                 );
                             }
                         }
@@ -737,10 +733,8 @@ impl BytecodeEngine {
                         //TODO: FIXME: please don't do this
                         let definition_id = definition_id.unwrap();
 
-                        if let Definition::Processed(Processed::Fun(ref target_fn)) =
-                            self.definitions[definition_id]
-                        {
-                            let return_type_id = target_fn.return_type_id;
+                        if let Definition::Fun(ref target_fn) = self.definitions[definition_id] {
+                            let return_definition_id = target_fn.return_ty;
 
                             for arg in &ec.args {
                                 self.convert_expr_to_bytecode(
@@ -754,7 +748,7 @@ impl BytecodeEngine {
 
                             bytecode.push(Bytecode::Call(definition_id));
 
-                            return_type_id
+                            return_definition_id
                         } else {
                             unimplemented!(
                                 "Processed function {:?} did not process correctly",
@@ -766,7 +760,7 @@ impl BytecodeEngine {
                 _ => unimplemented!("unknown function call type: {:#?}", ec.func),
             },
             Expr::Field(ef) => {
-                let type_id = self.convert_expr_to_bytecode(
+                let definition_id = self.convert_expr_to_bytecode(
                     &*ef.base,
                     expected_return_type,
                     bytecode,
@@ -774,7 +768,7 @@ impl BytecodeEngine {
                     var_stack,
                 );
 
-                if let TypeInfo::Struct(ref st) = self.types[type_id] {
+                if let Definition::Struct(ref st) = self.definitions[definition_id] {
                     match ef.member {
                         Member::Named(ident) => {
                             bytecode.push(Bytecode::Dot(ident.to_string()));
@@ -797,14 +791,14 @@ impl BytecodeEngine {
                     let token_stream: TokenStream = em.mac.tts.into_iter().skip(2).collect();
                     let call = String::new() + "__debug__(" + &token_stream.to_string() + ")";
                     let result: Expr = syn::parse_str(&call).unwrap();
-                    let type_id = self.convert_expr_to_bytecode(
+                    let definition_id = self.convert_expr_to_bytecode(
                         &result,
                         expected_return_type,
                         bytecode,
                         current_scope_id,
                         var_stack,
                     );
-                    type_id
+                    definition_id
                 } else {
                     unimplemented!("Can not resolve macro type");
                 }
@@ -820,7 +814,7 @@ impl BytecodeEngine {
         }
     }
 
-    pub(crate) fn resolve_type(&mut self, tp: &Type, current_scope_id: ScopeId) -> TypeId {
+    pub(crate) fn resolve_type(&mut self, tp: &Type, current_scope_id: ScopeId) -> DefinitionId {
         match *tp {
             Type::Path(ref tp) => match tp.path.segments[0].ident.as_ref() {
                 "u64" => builtin_type::U64,
@@ -830,10 +824,8 @@ impl BytecodeEngine {
                 "bool" => builtin_type::BOOL,
                 _ => {
                     if let Some(definition_id) = self.process_path(&tp.path, current_scope_id) {
-                        if let Definition::Processed(Processed::Struct(ref s)) =
-                            self.definitions[definition_id]
-                        {
-                            s.type_id
+                        if let Definition::Struct(_) = self.definitions[definition_id] {
+                            definition_id
                         } else {
                             unimplemented!("Could not find processed struct for type");
                         }

@@ -1,4 +1,4 @@
-use bytecode::{builtin_type, Bytecode, BytecodeEngine, Definition, Fun, Processed, TypeInfo};
+use bytecode::{builtin_type, Bytecode, BytecodeEngine, Definition, Fun};
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
@@ -336,9 +336,7 @@ impl EvalEngine {
                     _ => unimplemented!("Assignment missing right-hand side value"),
                 },
                 Bytecode::Call(definition_id) => {
-                    if let Definition::Processed(Processed::Fun(ref target_fun)) =
-                        bc.definitions[*definition_id]
-                    {
+                    if let Definition::Fun(ref target_fun) = bc.definitions[*definition_id] {
                         if let Some(ref ex_name) = target_fun.extern_name {
                             let result = self.extern_fns[ex_name](&mut self.value_stack);
                             self.value_stack.push(result);
@@ -346,20 +344,14 @@ impl EvalEngine {
                             let result = self.eval_fn_bytecode(bc, target_fun);
                             self.value_stack.push(result);
                         }
-                    } else if let Definition::Processed(Processed::Struct(ref s)) =
-                        bc.definitions[*definition_id]
-                    {
-                        if let TypeInfo::Struct(ref st) = bc.types[s.type_id] {
-                            let mut hash = HashMap::new();
-                            let mut offset = 1;
-                            for field in st.fields.iter().rev() {
-                                hash.insert(field.0.clone(), self.value_stack.len() - offset);
-                                offset += 1;
-                            }
-                            self.value_stack.push(Value::Object(hash))
-                        } else {
-                            unimplemented!("Can not find struct type for object");
+                    } else if let Definition::Struct(ref st) = bc.definitions[*definition_id] {
+                        let mut hash = HashMap::new();
+                        let mut offset = 1;
+                        for field in st.fields.iter().rev() {
+                            hash.insert(field.0.clone(), self.value_stack.len() - offset);
+                            offset += 1;
                         }
+                        self.value_stack.push(Value::Object(hash))
                     } else {
                         unimplemented!("Eval of unprocessed function");
                     }

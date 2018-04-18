@@ -1,42 +1,25 @@
-use bytecode::engine::BytecodeEngine;
-
-pub type TypeId = usize;
+use bytecode::engine::{BytecodeEngine, DefinitionId};
 
 pub mod builtin_type {
     use super::*;
-    pub const UNKNOWN: TypeId = 0;
-    pub const UNKNOWN_INT: TypeId = 1;
-    pub const VOID: TypeId = 2;
-    pub const U64: TypeId = 3;
-    pub const U32: TypeId = 4;
-    pub const I64: TypeId = 5;
-    pub const I32: TypeId = 6;
-    pub const BOOL: TypeId = 7;
-    pub const VOID_PTR: TypeId = 8;
-    pub const ERROR: TypeId = 9;
-}
-
-pub struct StructType {
-    pub fields: Vec<(String, TypeId)>,
-}
-
-pub enum TypeInfo {
-    Builtin,
-    Struct(StructType),
+    pub const UNKNOWN: DefinitionId = 0;
+    pub const UNKNOWN_INT: DefinitionId = 1;
+    pub const VOID: DefinitionId = 2;
+    pub const U64: DefinitionId = 3;
+    pub const U32: DefinitionId = 4;
+    pub const I64: DefinitionId = 5;
+    pub const I32: DefinitionId = 6;
+    pub const BOOL: DefinitionId = 7;
+    pub const VOID_PTR: DefinitionId = 8;
+    pub const ERROR: DefinitionId = 9;
 }
 
 impl BytecodeEngine {
-    pub fn new_struct(&mut self, fields: Vec<(String, TypeId)>) -> TypeId {
-        self.types.push(TypeInfo::Struct(StructType { fields }));
-
-        self.types.len() - 1
-    }
-
-    pub fn is_custom_type(&self, type_id: TypeId) -> bool {
+    pub fn is_custom_type(&self, type_id: DefinitionId) -> bool {
         type_id > builtin_type::ERROR
     }
 
-    pub fn printable_name(&self, type_id: TypeId) -> String {
+    pub fn printable_name(&self, type_id: DefinitionId) -> String {
         match type_id {
             builtin_type::UNKNOWN => "{unknown}".into(),
             builtin_type::UNKNOWN_INT => "{unknown int}".into(),
@@ -51,7 +34,7 @@ impl BytecodeEngine {
         }
     }
 
-    pub(crate) fn operator_compatible(&self, lhs: TypeId, rhs: TypeId) -> bool {
+    pub(crate) fn operator_compatible(&self, lhs: DefinitionId, rhs: DefinitionId) -> bool {
         if lhs == rhs {
             return true;
         }
@@ -69,7 +52,7 @@ impl BytecodeEngine {
         }
     }
 
-    pub(crate) fn assignment_compatible(&self, lhs: TypeId, rhs: TypeId) -> bool {
+    pub(crate) fn assignment_compatible(&self, lhs: DefinitionId, rhs: DefinitionId) -> bool {
         if lhs == rhs {
             return true;
         }
@@ -87,7 +70,7 @@ impl BytecodeEngine {
         }
     }
 
-    pub(crate) fn tighter_of_types(&self, lhs: TypeId, rhs: TypeId) -> TypeId {
+    pub(crate) fn tighter_of_types(&self, lhs: DefinitionId, rhs: DefinitionId) -> DefinitionId {
         match (lhs, rhs) {
             (builtin_type::U64, _) => builtin_type::U64,
             (builtin_type::U32, _) => builtin_type::U32,
