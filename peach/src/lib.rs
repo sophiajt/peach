@@ -4,7 +4,7 @@
 //!   * "build" - builds given project to a binary (uses the system C compiler)
 //!   * "run" - converts the project to bytecode, which it runs immediately
 //!   * "repl" - creates a repl to interact with the code directly
-#![feature(match_default_bindings, nll)]
+#![feature(nll)]
 #![feature(dyn_trait)]
 extern crate proc_macro2;
 extern crate syn;
@@ -15,6 +15,6 @@ mod compile;
 mod eval;
 mod tests;
 
-pub use bytecode::{Bytecode, BytecodeEngine, VarStack};
+pub use bytecode::{builtin_type, Bytecode, BytecodeEngine, Fun, VarStack};
 pub use compile::compile_bytecode;
 pub use eval::{EvalEngine, Value};
