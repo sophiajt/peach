@@ -1,66 +1,21 @@
 # Peach
 
-You shouldn't be reading this part.  There isn't any interesting text here.  It's just a space for your eyes to keep searching for meaning when there is none.
+This is a (very, very) incomplete re-write of the Rust compiler. It follows some different principles than the original.
 
-# Experiments
+* It tried to be as lazy as possible. Only the code called from the main is fully-checked and codegen'd.
+* It compiles to a flat, stack-based bytecode representation
+* It can run files like a scripting language
+* It has a REPL
+* It outputs C and then compiles the C
 
-This project is the playful playground of experiments. There are many paths ahead of us, but we have but two feet.
+There are huge swaths of Rust currently missing:
 
-# TODO
+* There is no borrow-checking
+* There are no macros
+* Things like name-binding are very much simplified
+* Visibility, mutability, etc all still need to be implemented
+* Error messages (it currently uses syn which doesn't expose source locations)
+* And lots of other things
 
-Need a better intermediate format.  Preferably something we can convert to post function processing that will help us quickly do a type/lifetime test. (note: this is kinda sorta done now, but would will likely need a bit more work)
+You can get a sense for what's supported by looking through `peach/test_files`
 
-Some possible next steps:
-
-* Add functions and function calls
-  * (DONE) basic support
-  * (DONE) params
-* (DONE) if
-* (DONE) while
-* (DONE) Playing with the while codegen, I'm noticing we could codegen a bit smarter.  Expressions could come out with paren'd strings inside of other expressions.  Assignments and the like would cap off the codegen.
-* (DONE) if expressions
-* (IN PROGRESS) mod
-  * DONE: correct mod scope traversal
-  * DONE: leading colon
-* (DONE) 'use' items
-* (DONE) mod "file":
-  * (DONE) Noticed that if this is added, you can load files froms of code from the repl
-* (DONE) All this new functionality feels like we want another refactor for cleanliness.  I'm starting to lose track of what functionality is where.
-* (DONE) Add structs and member access
-* (DONE) Basic println support
-* (DONE) Negate.
-* (DONE) Add simple number-converting "as" to handle broken expr tests
-* TODO: Probably need to split the value and type namespaces
-* TODO: mutability check
-* TODO: consistent naming
-* TODO: mod visibility
-* TODO: Check types of each function argument
-* TODO: WASM and native x64/x86 support(?)  These feel pretty likely, especially wasm.  The bytecode would need more type annotations, but should be doable.
-* Add type inference (we kinda already have it, but it's not like real yet)
-
-We could also start a non-lazy mode that's parallel
-  * basically: each Item would be done in parallel.  If you hit a definition you don't have (which is another Item), then
-    you delay yourself with that as the Requirement.  Periodically we flush the enqueued Item tasks and look for ones whose
-    Requirement was met.  
-  * If we wanted, each one could take it all the way to codegen.
-
-Where and how do macros fit in?
-
-What are you, peach?  What do you want to be?
-
-
-Non-next steps:
-
-* Good error messages (would need better parsing library)
-
-
-
-
-# Thoughts
-
-I kinda think it makes sense to set up the lazy bytecode converter first.  It might be some upfront work to make this happen, but then I think we could use it for the next stage of things, like bringing 
-on additional functions, structs, etc.
-
-Basically, how I think it should work (with currently using syn) is to us syn first to parse the file.  Then, we'll go through the items we have, grab their name and then put their syn-parsed bodies into a holder.
-
-Then we'll start converting from known correct locations.  Since we'll start with binaries, how about first starting with the main function.  Into the converter, we'll pass the lazy elements and the converted elements. (we can get fancy in the future with how this happens but first Make It Work(tm))
