@@ -25,4 +25,4 @@ You'll need to have your platform C compiler in your path. For Linux/macOS this 
 
 Note for Windows users: some equivalent of running `"C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\Tools\VsDevCmd.bat"` should do the trick.
 
-If you want to build the optional SDL example, you can uncomment it in the root Cargo.toml file. From there, you'll need to download SDL. Grab the Development Libraries for your platform from the [2.0 downloads](https://libsdl.org/download-2.0.php). 
+If you want to build the optional SDL example, you can uncomment it in the root Cargo.toml file. From there, you'll need to download SDL. Grab the Development Libraries for your platform from the [2.0 downloads](https://libsdl.org/download-2.0.php) and put the libs into the root directory (or ensure they're in a path your compiler can find).
