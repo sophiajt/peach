@@ -2,5 +2,5 @@
 members = [
     "peach",
     "peach_cli",
-    "examples/sdl"
+    # "examples/sdl"
 ]
